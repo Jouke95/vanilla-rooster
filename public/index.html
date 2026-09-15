@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <title>Weekrooster routes</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <style>
+    html, body, #root { margin: 0; padding: 0; min-height: 100%; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    const { useState, useEffect } = React;
+
+const DAY_NAMES = ["Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag"];
+function getMondayOfThisWeek() {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diff);
+  monday.setHours(0, 0, 0, 0);
+  return monday;
+}
+function formatDayDate(date) {
+  return date.toLocaleDateString("nl-NL", { day: "numeric", month: "short" });
+}
+
+const SEED_ROUTES_PER_DAY = [[{code:"We supply"}],[{code:"Vroeg 1"},{code:"Vroeg 2"},{code:"We supply"},{code:"Amsterdam centrum"},{code:"Amsterdam Zuid"},{code:"Amsterdam Extra"}],[{code:"Haarlem"},{code:"Noord-Holland"},{code:"'s Hertogenbosch"},{code:"Den Haag"},{code:"Rotterdam"},{code:"West Brabant"}],[{code:"Oost 1"},{code:"Oost 2"},{code:"Oost Brabant"},{code:"'t Gooi"},{code:"Groene Hart"},{code:"Noord"}],[{code:"Vroeg 1"},{code:"Vroeg 2"},{code:"Amsterdam centrum"},{code:"Amsterdam Zuid"},{code:"Amsterdam Extra"},{code:"Zeeland"},{code:"Den Haag"},{code:"Rotterdam"}]];
+
+function weekKey(monday) { return monday.toISOString().slice(0, 10); }
+function addWeeks(date, n) { const d = new Date(date); d.setDate(d.getDate() + n * 7); return d; }
+
+function groupRoutesByDay(monday, rawRoutes) {
+  return DAY_NAMES.map((name, i) => {
+    const dateObj = new Date(monday);
+    dateObj.setDate(monday.getDate() + i);
+    return {
+      id: `day-${i}`,
+      dayIndex: i,
+      name,
+      date: formatDayDate(dateObj),
+      isoDate: weekKey(dateObj),
+      routes: rawRoutes.filter(r => r.day_index === i).map(r => ({ id: r.id, code: r.code, driver: r.driver_name || "" }))
+    };
+  });
+}
+
+function RouteRooster() {
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [rawRoutes, setRawRoutes] = useState([]);
+  const [driversRaw, setDriversRaw] = useState([]);
+  const [newDriver, setNewDriver] = useState("");
+  const [vacations, setVacations] = useState([]);
+  const [vacDriver, setVacDriver] = useState("");
+  const [vacStart, setVacStart] = useState("");
+  const [vacEnd, setVacEnd] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const drivers = driversRaw.map(d => d.name);
+  const driverIdByName = Object.fromEntries(driversRaw.map(d => [d.name, d.id]));
+  const currentMonday = addWeeks(getMondayOfThisWeek(), weekOffset);
+  const currentKey = weekKey(currentMonday);
+  const days = groupRoutesByDay(currentMonday, rawRoutes);
+  const currentFriday = new Date(currentMonday);
+  currentFriday.setDate(currentMonday.getDate() + 4);
+  const weekLabel = `${formatDayDate(currentMonday)} – ${formatDayDate(currentFriday)}`;
+
+  useEffect(() => {
+    fetch("/api/drivers").then(r => r.json()).then(setDriversRaw);
+    fetch("/api/vacations").then(r => r.json()).then(setVacations);
+  }, []);
+  useEffect(() => {
+    if (!vacDriver && drivers.length > 0) setVacDriver(drivers[0]);
+  }, [driversRaw]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadWeek() {
+      setLoading(true);
+      const res = await fetch(`/api/routes?week_key=${currentKey}`);
+      let routes = await res.json();
+      if (routes.length === 0) {
+        for (let i = 0; i < SEED_ROUTES_PER_DAY.length; i++) {
+          for (const r of SEED_ROUTES_PER_DAY[i]) {
+            await fetch("/api/routes", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ week_key: currentKey, day_index: i, code: r.code })
+            });
+          }
+        }
+        const res2 = await fetch(`/api/routes?week_key=${currentKey}`);
+        routes = await res2.json();
+      }
+      if (!cancelled) { setRawRoutes(routes); setLoading(false); }
+    }
+    loadWeek();
+    return () => { cancelled = true; };
+  }, [currentKey]);
+
+  const isDriverOnVacation = (driverName, isoDate) =>
+    vacations.some(v => v.driver_name === driverName && isoDate >= v.start_date && isoDate <= v.end_date);
+
+  const addVacation = async () => {
+    if (!vacDriver || !vacStart || !vacEnd || vacStart > vacEnd) return;
+    const driver_id = driverIdByName[vacDriver];
+    const res = await fetch("/api/vacations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ driver_id, start_date: vacStart, end_date: vacEnd })
+    });
+    const created = await res.json();
+    setVacations(prev => [...prev, { ...created, driver_name: vacDriver }]);
+    setVacStart(""); setVacEnd("");
+  };
+
+  const removeVacation = async id => {
+    await fetch(`/api/vacations/${id}`, { method: "DELETE" });
+    setVacations(prev => prev.filter(v => v.id !== id));
+  };
+
+  const addDriver = async () => {
+    const name = newDriver.trim();
+    if (!name || drivers.includes(name)) return;
+    const res = await fetch("/api/drivers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name })
+    });
+    const created = await res.json();
+    setDriversRaw(prev => [...prev, created]);
+    setNewDriver("");
+  };
+
+  const removeDriver = async name => {
+    const id = driverIdByName[name];
+    if (id === undefined) return;
+    await fetch(`/api/drivers/${id}`, { method: "DELETE" });
+    setDriversRaw(prev => prev.filter(d => d.name !== name));
+    setVacations(prev => prev.filter(v => v.driver_name !== name));
+    setRawRoutes(prev => prev.map(r => r.driver_name === name ? { ...r, driver_id: null, driver_name: null } : r));
+  };
+
+  const addRoute = async dayIndex => {
+    const res = await fetch("/api/routes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ week_key: currentKey, day_index: dayIndex, code: "" })
+    });
+    const created = await res.json();
+    setRawRoutes(prev => [...prev, { ...created, driver_name: null }]);
+  };
+
+  const removeRoute = async routeId => {
+    await fetch(`/api/routes/${routeId}`, { method: "DELETE" });
+    setRawRoutes(prev => prev.filter(r => r.id !== routeId));
+  };
+
+  const updateRoute = async (routeId, field, value) => {
+    setRawRoutes(prev => prev.map(r => r.id === routeId ? (field === "driver" ? { ...r, driver_name: value || null } : { ...r, code: value }) : r));
+    const body = field === "driver" ? { driver_id: value ? driverIdByName[value] : null } : { code: value };
+    await fetch(`/api/routes/${routeId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  };
+
+  const totalRoutes = days.reduce((sum, d) => sum + d.routes.length, 0);
+  const openRoutes = days.reduce((sum, d) => sum + d.routes.filter(r => !r.driver.trim()).length, 0);
+
+  return React.createElement("div", { className: "rr-print-root", style: { minHeight: "100%", background: "#EDF0F2", fontFamily: "'IBM Plex Sans', system-ui, sans-serif", color: "#1B2A4A", padding: "28px 20px 60px" } },
+    React.createElement("style", null, `
+      @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&family=Space+Grotesk:wght@500;600;700&display=swap');
+      .rr-input { font-family: 'IBM Plex Sans', sans-serif; font-size: 13.5px; border: none; background: transparent; outline: none; width: 100%; color: #1B2A4A; }
+      .rr-input::placeholder { color: #A9433F; opacity: 0.85; font-weight: 500; }
+      .rr-select { font-family: 'IBM Plex Sans', sans-serif; font-size: 13.5px; border: none; background: transparent; outline: none; width: 100%; color: #1B2A4A; appearance: none; }
+      .rr-select.rr-select-empty { color: #A9433F; font-weight: 500; }
+      .rr-driver-chip:hover .rr-driver-x { opacity: 1; }
+      .rr-driver-x { opacity: 0; transition: opacity 0.12s ease; cursor: pointer; }
+      .rr-code-input { font-family: 'IBM Plex Mono', monospace; font-size: 14.5px; font-weight: 600; border: none; background: transparent; outline: none; width: 100%; color: #4A5568; letter-spacing: 0.01em; }
+      .rr-route-row:hover .rr-remove { opacity: 1; }
+      .rr-remove { opacity: 0; transition: opacity 0.12s ease; cursor: pointer; }
+      .rr-add-btn:hover { background: #1B2A4A; color: #EDF0F2; }
+      .rr-day-col::-webkit-scrollbar { width: 5px; }
+      .rr-day-col::-webkit-scrollbar-thumb { background: #C9CDD3; border-radius: 3px; }
+      @media print {
+        .no-print { display: none !important; }
+        body { background: #fff !important; }
+        .rr-print-root { background: #fff !important; padding: 0 !important; }
+        .rr-week-grid { grid-template-columns: repeat(5, 1fr) !important; gap: 8px !important; }
+        .rr-day-col { overflow: visible !important; }
+        select { appearance: none !important; border: none !important; background: transparent !important; }
+        .rr-day-card { break-inside: avoid; border: 1px solid #999 !important; }
+        .rr-route-row { break-inside: avoid; }
+      }
+    `),
+    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "24px", flexWrap: "wrap", gap: "16px" } },
+      React.createElement("div", null,
+        React.createElement("h1", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "26px", fontWeight: 700, margin: 0, letterSpacing: "-0.01em" } }, "Weekrooster routes"),
+        React.createElement("p", { style: { margin: "6px 0 0", fontSize: "13.5px", color: "#5A6472" } }, "Vul per dag de routes in en wijs een chauffeur toe. Onbezette routes blijven zichtbaar."),
+        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "10px", marginTop: "12px" } },
+          React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(w => w - 1), style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "13px", color: "#1B2A4A", cursor: "pointer" } }, "← vorige week"),
+          React.createElement("span", { style: { fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#1B2A4A", minWidth: "120px", textAlign: "center" } }, weekLabel, weekOffset === 0 && React.createElement("span", { style: { color: "#5A6472", marginLeft: "6px" } }, "(deze week)")),
+          React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(w => w + 1), style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "13px", color: "#1B2A4A", cursor: "pointer" } }, "volgende week →"),
+          weekOffset !== 0 && React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(0), style: { border: "none", background: "transparent", fontSize: "12.5px", color: "#5A6472", textDecoration: "underline", cursor: "pointer" } }, "naar vandaag")
+        )
+      ),
+      React.createElement("div", { className: "no-print", style: { display: "flex", gap: "10px" } },
+        React.createElement("div", { style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "6px", padding: "10px 16px", textAlign: "center", minWidth: "84px" } },
+          React.createElement("div", { style: { fontFamily: "'IBM Plex Mono', monospace", fontSize: "20px", fontWeight: 600 } }, totalRoutes),
+          React.createElement("div", { style: { fontSize: "11px", color: "#5A6472", marginTop: "2px" } }, "routes totaal")
+        ),
+        React.createElement("div", { style: { background: openRoutes > 0 ? "#FBEDE0" : "#FFFFFF", border: `1px solid ${openRoutes > 0 ? "#E8A33D" : "#C9CDD3"}`, borderRadius: "6px", padding: "10px 16px", textAlign: "center", minWidth: "84px" } },
+          React.createElement("div", { style: { fontFamily: "'IBM Plex Mono', monospace", fontSize: "20px", fontWeight: 600, color: openRoutes > 0 ? "#A9433F" : "#1B2A4A" } }, openRoutes),
+          React.createElement("div", { style: { fontSize: "11px", color: "#5A6472", marginTop: "2px" } }, "nog niet ingevuld")
+        ),
+        React.createElement("button", { onClick: () => window.print(), style: { border: "1px solid #1B2A4A", background: "#1B2A4A", color: "#FFFFFF", borderRadius: "6px", padding: "0 16px", fontSize: "13px", cursor: "pointer" } }, "Print rooster")
+      )
+    ),
+    React.createElement("div", { className: "no-print", style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px 14px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" } },
+      React.createElement("span", { style: { fontSize: "12.5px", color: "#5A6472", flexShrink: 0 } }, "Chauffeurs:"),
+      drivers.map(name => React.createElement("span", { key: name, className: "rr-driver-chip", style: { display: "inline-flex", alignItems: "center", gap: "6px", background: "#F3F8F3", border: "1px solid #DCE5DC", borderRadius: "14px", padding: "3px 10px", fontSize: "13px" } },
+        name,
+        React.createElement("span", { className: "rr-driver-x", onClick: () => removeDriver(name), title: `${name} verwijderen`, style: { color: "#A9433F", fontSize: "12px" } }, "×")
+      )),
+      React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: "4px", marginLeft: "4px" } },
+        React.createElement("input", { className: "rr-input", style: { width: "110px", borderBottom: "1px solid #C9CDD3", padding: "3px 2px" }, value: newDriver, placeholder: "nieuwe naam", onChange: e => setNewDriver(e.target.value), onKeyDown: e => e.key === "Enter" && addDriver() }),
+        React.createElement("button", { onClick: addDriver, style: { border: "1px solid #C9CDD3", background: "transparent", borderRadius: "5px", padding: "3px 9px", fontSize: "12.5px", color: "#1B2A4A", cursor: "pointer" } }, "+ toevoegen")
+      )
+    ),
+    React.createElement("div", { className: "rr-week-grid", style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: "12px" } },
+      days.map(day => {
+        const dayOpen = day.routes.filter(r => !r.driver.trim()).length;
+        const driverCounts = {};
+        day.routes.forEach(r => { if (r.driver.trim()) driverCounts[r.driver] = (driverCounts[r.driver] || 0) + 1; });
+        const dayDoubles = Object.values(driverCounts).filter(c => c > 1).length;
+        const dayVacationConflicts = day.routes.filter(r => r.driver.trim() && isDriverOnVacation(r.driver, day.isoDate)).length;
+        return React.createElement("div", { key: day.id, className: "rr-day-card", style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", display: "flex", flexDirection: "column", minHeight: "260px" } },
+          React.createElement("div", { style: { padding: "12px 14px 10px", borderBottom: "1px solid #E3E6E9", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px" } },
+            React.createElement("span", { style: { display: "flex", alignItems: "baseline", gap: "6px" } },
+              React.createElement("span", { style: { fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: "14.5px" } }, day.name),
+              React.createElement("span", { style: { fontSize: "12px", color: "#8A93A0", fontFamily: "'IBM Plex Mono', monospace" } }, day.date)
+            ),
+            React.createElement("span", { style: { display: "flex", gap: "6px" } },
+              dayDoubles > 0 && React.createElement("span", { style: { background: "#F6D9D8", color: "#8A2A26", fontSize: "11px", fontWeight: 600, borderRadius: "10px", padding: "1px 8px", fontFamily: "'IBM Plex Mono', monospace" } }, "⚠ dubbel"),
+              dayVacationConflicts > 0 && React.createElement("span", { style: { background: "#E6DCF2", color: "#4B2E7A", fontSize: "11px", fontWeight: 600, borderRadius: "10px", padding: "1px 8px", fontFamily: "'IBM Plex Mono', monospace" } }, "⚠ vakantie"),
+              dayOpen > 0 && React.createElement("span", { style: { background: "#F4C892", color: "#7A3B10", fontSize: "11px", fontWeight: 600, borderRadius: "10px", padding: "1px 8px", fontFamily: "'IBM Plex Mono', monospace" } }, dayOpen, " open")
+            )
+          ),
+          React.createElement("div", { className: "rr-day-col", style: { padding: "8px", flex: 1, overflowY: "auto" } },
+            day.routes.map(route => {
+              const isEmpty = !route.driver.trim();
+              const isDouble = route.driver.trim() && driverCounts[route.driver] > 1;
+              const isOnVacation = route.driver.trim() && isDriverOnVacation(route.driver, day.isoDate);
+              const hasWarning = isDouble || isOnVacation;
+              return React.createElement("div", { key: route.id, className: "rr-route-row", style: { display: "flex", alignItems: "flex-start", gap: "8px", padding: "8px 9px", marginBottom: "6px", borderRadius: "6px", border: `1px solid ${hasWarning ? "#C0433D" : isEmpty ? "#E8A33D" : "#DCE5DC"}`, background: hasWarning ? "#FBEAE9" : isEmpty ? "#FDF6EC" : "#F3F8F3" } },
+                React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                  React.createElement("input", { className: "rr-code-input", value: route.code, placeholder: "Routenaam", onChange: e => updateRoute(route.id, "code", e.target.value) }),
+                  React.createElement("div", { style: { height: "1px", background: "#D6DBDD", margin: "4px 0" } }),
+                  React.createElement("select", { className: "rr-select" + (route.driver ? "" : " rr-select-empty"), value: route.driver, onChange: e => updateRoute(route.id, "driver", e.target.value) },
+                    React.createElement("option", { value: "" }, "niet ingevuld"),
+                    drivers.map(name => {
+                      const onVac = isDriverOnVacation(name, day.isoDate);
+                      return React.createElement("option", { key: name, value: name, disabled: onVac }, name, onVac ? " (vakantie)" : "");
+                    })
+                  ),
+                  isDouble && React.createElement("div", { style: { fontSize: "11px", color: "#A9433F", marginTop: "3px", fontWeight: 500 } }, "⚠ ", route.driver, " staat vandaag op ", driverCounts[route.driver], " routes"),
+                  isOnVacation && React.createElement("div", { style: { fontSize: "11px", color: "#4B2E7A", marginTop: "3px", fontWeight: 500 } }, "⚠ ", route.driver, " is op vakantie deze dag")
+                ),
+                React.createElement("span", { className: "rr-remove no-print", onClick: () => removeRoute(route.id), title: "Route verwijderen", style: { fontSize: "13px", color: "#A9433F", padding: "0 2px", flexShrink: 0, alignSelf: "flex-start" } }, "×")
+              );
+            }),
+            React.createElement("button", { className: "rr-add-btn no-print", onClick: () => addRoute(day.dayIndex), style: { width: "100%", marginTop: "2px", padding: "7px 0", borderRadius: "6px", border: "1px dashed #B8BFC6", background: "transparent", color: "#5A6472", fontSize: "12.5px", fontFamily: "'IBM Plex Sans', sans-serif", cursor: "pointer", transition: "background 0.12s ease, color 0.12s ease" } }, "+ route toevoegen")
+          )
+        );
+      })
+    ),
+    React.createElement("div", { className: "no-print", style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px 14px", marginTop: "16px" } },
+      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" } },
+        React.createElement("span", { style: { fontSize: "12.5px", color: "#5A6472", flexShrink: 0 } }, "Vakantie/vrij:"),
+        React.createElement("select", { value: vacDriver, onChange: e => setVacDriver(e.target.value), style: { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "13px", border: "1px solid #C9CDD3", borderRadius: "5px", padding: "3px 6px", background: "#FFFFFF", color: "#1B2A4A" } },
+          drivers.map(name => React.createElement("option", { key: name, value: name }, name))
+        ),
+        React.createElement("input", { type: "date", value: vacStart, onChange: e => setVacStart(e.target.value), style: { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "13px", border: "1px solid #C9CDD3", borderRadius: "5px", padding: "3px 6px", color: "#1B2A4A" } }),
+        React.createElement("span", { style: { color: "#8A93A0", fontSize: "12.5px" } }, "t/m"),
+        React.createElement("input", { type: "date", value: vacEnd, onChange: e => setVacEnd(e.target.value), style: { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "13px", border: "1px solid #C9CDD3", borderRadius: "5px", padding: "3px 6px", color: "#1B2A4A" } }),
+        React.createElement("button", { onClick: addVacation, style: { border: "1px solid #C9CDD3", background: "transparent", borderRadius: "5px", padding: "3px 9px", fontSize: "12.5px", color: "#1B2A4A", cursor: "pointer" } }, "+ toevoegen")
+      ),
+      vacations.length > 0 && React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "10px" } },
+        vacations.map(v => React.createElement("span", { key: v.id, style: { display: "inline-flex", alignItems: "center", gap: "6px", background: "#FBEDE0", border: "1px solid #E8A33D", borderRadius: "14px", padding: "3px 10px", fontSize: "12.5px", color: "#7A3B10" } },
+          v.driver_name, ": ", formatDayDate(new Date(v.start_date)), " – ", formatDayDate(new Date(v.end_date)),
+          React.createElement("span", { onClick: () => removeVacation(v.id), title: "Verwijderen", style: { cursor: "pointer", color: "#A9433F" } }, "×")
+        ))
+      )
+    ),
+    loading && React.createElement("p", { className: "no-print", style: { fontSize: "12px", color: "#8A93A0", marginTop: "8px" } }, "Rooster laden…"),
+    React.createElement("p", { style: { marginTop: "22px", fontSize: "12px", color: "#8A93A0", maxWidth: "520px" } }, "Alles wordt automatisch opgeslagen op de server, ook na een refresh of tussen sessies.")
+  );
+}
+
+    ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(RouteRooster));
+  </script>
+</body>
+</html>
