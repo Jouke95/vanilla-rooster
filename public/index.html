@@ -29,7 +29,48 @@ function formatDayDate(date) {
   return date.toLocaleDateString("nl-NL", { day: "numeric", month: "short" });
 }
 
-const SEED_ROUTES_PER_DAY = [[{code:"We Supply"}],[{code:"Vroeg 1"},{code:"Vroeg 2"},{code:"We supply"},{code:"Amsterdam centrum"},{code:"Amsterdam Zuid"},{code:"Amsterdam Extra"}],[{code:"Haarlem"},{code:"Noord-Holland"},{code:"'s Hertogenbosch"},{code:"Den Haag"},{code:"Rotterdam"},{code:"West Brabant"}],[{code:"Oost 1"},{code:"Oost 2"},{code:"Oost Brabant"},{code:"'t Gooi"},{code:"Groene Hart"},{code:"Noord"}],[{code:"Vroeg 1"},{code:"Vroeg 2"},{code:"Amsterdam centrum"},{code:"Amsterdam Zuid"},{code:"Amsterdam Extra"},{code:"Zeeland"},{code:"Den Haag"},{code:"Rotterdam"}]];
+const SEED_ROUTES_PER_DAY = [
+  [
+    { code: "We Supply" }
+  ],
+  [
+    { code: "Vroeg 1" },
+    { code: "Vroeg 2" },
+    { code: "We Supply" },
+    { code: "Amsterdam Centrum" },
+    { code: "Amsterdam Zuid" },
+    { code: "Amsterdam Extra" }
+  ],
+  [
+    { code: "Haarlem" },
+    { code: "Noord-Holland" },
+    { code: "'s Hertogenbosch" },
+    { code: "Den Haag" },
+    { code: "Rotterdam" },
+    { code: "West Brabant" }
+  ],
+  [
+    { code: "Oost 1" },
+    { code: "Oost 2" },
+    { code: "Oost Brabant" },
+    { code: "'t Gooi" },
+    { code: "Groene Hart" },
+    { code: "Noord" }
+  ],
+  [
+    { code: "Vroeg 1" },
+    { code: "Vroeg 2" },
+    { code: "Amsterdam Centrum" },
+    { code: "Amsterdam Zuid" },
+    { code: "Amsterdam Extra" },
+    { code: "Zeeland" },
+    { code: "Den Haag" },
+    { code: "Rotterdam" }
+  ]
+];
+function isFixedRoute(dayIndex, code) {
+  return SEED_ROUTES_PER_DAY[dayIndex].some(r => r.code === code);
+}
 
 function weekKey(date) {
   const y = date.getFullYear();
@@ -268,6 +309,7 @@ function RouteRooster() {
               const isDouble = route.driver.trim() && driverCounts[route.driver] > 1;
               const isOnVacation = route.driver.trim() && isDriverOnVacation(route.driver, day.isoDate);
               const hasWarning = isDouble || isOnVacation;
+              const fixed = isFixedRoute(day.dayIndex, route.code);
               return React.createElement("div", { key: route.id, className: "rr-route-row", style: { display: "flex", alignItems: "flex-start", gap: "8px", padding: "8px 9px", marginBottom: "6px", borderRadius: "6px", border: `1px solid ${hasWarning ? "#C0433D" : isEmpty ? "#E8A33D" : "#DCE5DC"}`, background: hasWarning ? "#FBEAE9" : isEmpty ? "#FDF6EC" : "#F3F8F3" } },
                 React.createElement("div", { style: { flex: 1, minWidth: 0 } },
                   React.createElement("input", { className: "rr-code-input", value: route.code, placeholder: "Routenaam", onChange: e => updateRoute(route.id, "code", e.target.value) }),
@@ -282,7 +324,7 @@ function RouteRooster() {
                   isDouble && React.createElement("div", { style: { fontSize: "11px", color: "#A9433F", marginTop: "3px", fontWeight: 500 } }, "⚠ ", route.driver, " staat vandaag op ", driverCounts[route.driver], " routes"),
                   isOnVacation && React.createElement("div", { style: { fontSize: "11px", color: "#4B2E7A", marginTop: "3px", fontWeight: 500 } }, "⚠ ", route.driver, " is op vakantie deze dag")
                 ),
-                React.createElement("span", { className: "rr-remove no-print", onClick: () => removeRoute(route.id), title: "Route verwijderen", style: { fontSize: "13px", color: "#A9433F", padding: "0 2px", flexShrink: 0, alignSelf: "flex-start" } }, "×")
+                !fixed && React.createElement("span", { className: "rr-remove no-print", onClick: () => removeRoute(route.id), title: "Route verwijderen", style: { fontSize: "13px", color: "#A9433F", padding: "0 2px", flexShrink: 0, alignSelf: "flex-start" } }, "×")
               );
             }),
             React.createElement("button", { className: "rr-add-btn no-print", onClick: () => addRoute(day.dayIndex), style: { width: "100%", marginTop: "2px", padding: "7px 0", borderRadius: "6px", border: "1px dashed #B8BFC6", background: "transparent", color: "#5A6472", fontSize: "12.5px", fontFamily: "'IBM Plex Sans', sans-serif", cursor: "pointer", transition: "background 0.12s ease, color 0.12s ease" } }, "+ route toevoegen")
