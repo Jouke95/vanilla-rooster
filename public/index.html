@@ -29,9 +29,14 @@ function formatDayDate(date) {
   return date.toLocaleDateString("nl-NL", { day: "numeric", month: "short" });
 }
 
-const SEED_ROUTES_PER_DAY = [[{code:"We supply"}],[{code:"Vroeg 1"},{code:"Vroeg 2"},{code:"We supply"},{code:"Amsterdam centrum"},{code:"Amsterdam Zuid"},{code:"Amsterdam Extra"}],[{code:"Haarlem"},{code:"Noord-Holland"},{code:"'s Hertogenbosch"},{code:"Den Haag"},{code:"Rotterdam"},{code:"West Brabant"}],[{code:"Oost 1"},{code:"Oost 2"},{code:"Oost Brabant"},{code:"'t Gooi"},{code:"Groene Hart"},{code:"Noord"}],[{code:"Vroeg 1"},{code:"Vroeg 2"},{code:"Amsterdam centrum"},{code:"Amsterdam Zuid"},{code:"Amsterdam Extra"},{code:"Zeeland"},{code:"Den Haag"},{code:"Rotterdam"}]];
+const SEED_ROUTES_PER_DAY = [[{code:"We Supply"}],[{code:"Vroeg 1"},{code:"Vroeg 2"},{code:"We supply"},{code:"Amsterdam centrum"},{code:"Amsterdam Zuid"},{code:"Amsterdam Extra"}],[{code:"Haarlem"},{code:"Noord-Holland"},{code:"'s Hertogenbosch"},{code:"Den Haag"},{code:"Rotterdam"},{code:"West Brabant"}],[{code:"Oost 1"},{code:"Oost 2"},{code:"Oost Brabant"},{code:"'t Gooi"},{code:"Groene Hart"},{code:"Noord"}],[{code:"Vroeg 1"},{code:"Vroeg 2"},{code:"Amsterdam centrum"},{code:"Amsterdam Zuid"},{code:"Amsterdam Extra"},{code:"Zeeland"},{code:"Den Haag"},{code:"Rotterdam"}]];
 
-function weekKey(monday) { return monday.toISOString().slice(0, 10); }
+function weekKey(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
 function addWeeks(date, n) { const d = new Date(date); d.setDate(d.getDate() + n * 7); return d; }
 
 function groupRoutesByDay(monday, rawRoutes) {
@@ -191,13 +196,18 @@ function RouteRooster() {
       @media print {
         .no-print { display: none !important; }
         body { background: #fff !important; }
-        .rr-print-root { background: #fff !important; padding: 0 !important; }
-        .rr-week-grid { grid-template-columns: repeat(5, 1fr) !important; gap: 8px !important; }
-        .rr-day-col { overflow: visible !important; }
+        html, body, #root { min-height: auto !important; }
+        .rr-print-root { background: #fff !important; padding: 6px !important; min-height: auto !important; }
+        .rr-week-grid { grid-template-columns: repeat(5, 1fr) !important; gap: 6px !important; }
+        .rr-day-card { break-inside: avoid; border: 1px solid #999 !important; min-height: auto !important; }
+        .rr-day-col { overflow: visible !important; padding: 4px !important; }
+        .rr-route-row { break-inside: avoid; padding: 4px 6px !important; margin-bottom: 4px !important; }
+        .rr-code-input { font-size: 11px !important; }
         select { appearance: none !important; border: none !important; background: transparent !important; }
-        .rr-day-card { break-inside: avoid; border: 1px solid #999 !important; }
-        .rr-route-row { break-inside: avoid; }
-      }
+        h1 { font-size: 18px !important; margin-bottom: 2px !important; }
+        p { font-size: 11px !important; }
+        @page { size: landscape; margin: 10mm; }
+    }
     `),
     React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "24px", flexWrap: "wrap", gap: "16px" } },
       React.createElement("div", null,
@@ -205,7 +215,7 @@ function RouteRooster() {
         React.createElement("p", { style: { margin: "6px 0 0", fontSize: "13.5px", color: "#5A6472" } }, "Vul per dag de routes in en wijs een chauffeur toe. Onbezette routes blijven zichtbaar."),
         React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "10px", marginTop: "12px" } },
           React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(w => w - 1), style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "13px", color: "#1B2A4A", cursor: "pointer" } }, "← vorige week"),
-          React.createElement("span", { style: { fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#1B2A4A", minWidth: "120px", textAlign: "center" } }, weekLabel, weekOffset === 0 && React.createElement("span", { style: { color: "#5A6472", marginLeft: "6px" } }, "(deze week)")),
+          React.createElement("span", { style: { fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#1B2A4A", minWidth: "120px", textAlign: "center" } }, weekLabel, weekOffset === 0 && React.createElement("span", { className: "no-print", style: { color: "#5A6472", marginLeft: "6px" } }, "(deze week)")),
           React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(w => w + 1), style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "13px", color: "#1B2A4A", cursor: "pointer" } }, "volgende week →"),
           weekOffset !== 0 && React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(0), style: { border: "none", background: "transparent", fontSize: "12.5px", color: "#5A6472", textDecoration: "underline", cursor: "pointer" } }, "naar vandaag")
         )
