@@ -33,7 +33,7 @@ app.delete('/api/drivers/:id', async (req, res) => {
 
 app.get('/api/vacations', async (req, res) => {
   const result = await db.execute(`
-    SELECT vacations.id, vacations.start_date, vacations.end_date,
+    SELECT vacations.id, vacations.start_date, vacations.end_date, vacations.type,
            drivers.id AS driver_id, drivers.name AS driver_name
     FROM vacations
     JOIN drivers ON drivers.id = vacations.driver_id
@@ -42,15 +42,16 @@ app.get('/api/vacations', async (req, res) => {
 });
 
 app.post('/api/vacations', async (req, res) => {
-  const { driver_id, start_date, end_date } = req.body;
+  const { driver_id, start_date, end_date, type } = req.body;
   if (!driver_id || !start_date || !end_date) {
     return res.status(400).json({ error: 'driver_id, start_date en end_date zijn verplicht' });
   }
+  const finalType = type === 'unavailable' ? 'unavailable' : 'vacation';
   const result = await db.execute({
-    sql: 'INSERT INTO vacations (driver_id, start_date, end_date) VALUES (?, ?, ?)',
-    args: [driver_id, start_date, end_date],
+    sql: 'INSERT INTO vacations (driver_id, start_date, end_date, type) VALUES (?, ?, ?, ?)',
+    args: [driver_id, start_date, end_date, finalType],
   });
-  res.status(201).json({ id: Number(result.lastInsertRowid), driver_id, start_date, end_date });
+  res.status(201).json({ id: Number(result.lastInsertRowid), driver_id, start_date, end_date, type: finalType });
 });
 
 app.delete('/api/vacations/:id', async (req, res) => {

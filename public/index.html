@@ -81,7 +81,15 @@ function weekKey(date) {
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
+
 function addWeeks(date, n) { const d = new Date(date); d.setDate(d.getDate() + n * 7); return d; }
+function getISOWeekNumber(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+}
 
 function groupRoutesByDay(monday, rawRoutes) {
   return DAY_NAMES.map((name, i) => {
@@ -108,6 +116,7 @@ function RouteRooster() {
   const [vacStart, setVacStart] = useState("");
   const [vacEnd, setVacEnd] = useState("");
   const [loading, setLoading] = useState(true);
+  const [contextMenu, setContextMenu] = useState(null);
 
   const drivers = driversRaw.map(d => d.name);
   const driverIdByName = Object.fromEntries(driversRaw.map(d => [d.name, d.id]));
@@ -153,7 +162,10 @@ function RouteRooster() {
   }, [currentKey]);
 
   const isDriverOnVacation = (driverName, isoDate) =>
-    vacations.some(v => v.driver_name === driverName && isoDate >= v.start_date && isoDate <= v.end_date);
+    vacations.some(v => v.driver_name === driverName && v.type !== "unavailable" && isoDate >= v.start_date && isoDate <= v.end_date);
+
+  const isDriverUnavailable = (driverName, isoDate) =>
+    vacations.some(v => v.driver_name === driverName && v.type === "unavailable" && isoDate >= v.start_date && isoDate <= v.end_date);
 
   const addVacation = async () => {
     if (!vacDriver || !vacStart || !vacEnd || vacStart > vacEnd) return;
@@ -161,11 +173,27 @@ function RouteRooster() {
     const res = await fetch("/api/vacations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ driver_id, start_date: vacStart, end_date: vacEnd })
+      body: JSON.stringify({ driver_id, start_date: vacStart, end_date: vacEnd, type: "vacation" })
     });
     const created = await res.json();
     setVacations(prev => [...prev, { ...created, driver_name: vacDriver }]);
     setVacStart(""); setVacEnd("");
+  };
+
+  const toggleUnavailable = async (driverName, isoDate) => {
+    const existing = vacations.find(v => v.driver_name === driverName && v.type === "unavailable" && v.start_date === isoDate && v.end_date === isoDate);
+    if (existing) {
+      await removeVacation(existing.id);
+      return;
+    }
+    const driver_id = driverIdByName[driverName];
+    const res = await fetch("/api/vacations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ driver_id, start_date: isoDate, end_date: isoDate, type: "unavailable" })
+    });
+    const created = await res.json();
+    setVacations(prev => [...prev, { ...created, driver_name: driverName }]);
   };
 
   const removeVacation = async id => {
@@ -293,16 +321,20 @@ function RouteRooster() {
     gridChildren.push(React.createElement("div", { key: `drv-${name}`, style: { fontSize: "12.5px", fontWeight: 600, alignSelf: "flex-start", paddingTop: "8px" } }, name));
     days.forEach(day => {
       const onVac = isDriverOnVacation(name, day.isoDate);
+      const onUnavail = isDriverUnavailable(name, day.isoDate);
+      const blocked = onVac || onUnavail;
       const assigned = driverDayRoutes[name][day.dayIndex];
-      const baseColor = onVac ? "#F1EAFB" : "#FFFFFF";
-      gridChildren.push(React.createElement("div", {
+      const baseColor = onVac ? "#F1EAFB" : onUnavail ? "#FBEEED" : "#FFFFFF";
+        gridChildren.push(React.createElement("div", {
         key: `cell-${name}-${day.id}`,
-        onDragOver: e => { if (onVac) return; e.preventDefault(); e.currentTarget.style.background = "#E8F4EA"; },
+        onDragOver: e => { if (blocked) return; e.preventDefault(); e.currentTarget.style.background = "#E8F4EA"; },
         onDragLeave: e => { e.currentTarget.style.background = baseColor; },
-        onDrop: e => { if (onVac) return; e.currentTarget.style.background = baseColor; handleDropOnCell(e, day.dayIndex, name); },
-        style: { background: baseColor, border: `1px solid ${onVac ? "#C9B6E8" : "#E3E6E9"}`, borderRadius: "6px", padding: "4px", minHeight: "26px" }
-      },
-        onVac && React.createElement("div", { style: { fontSize: "10.5px", color: "#4B2E7A", fontWeight: 600, marginBottom: "4px" } }, "Vakantie"),
+        onDrop: e => { if (blocked) return; e.currentTarget.style.background = baseColor; handleDropOnCell(e, day.dayIndex, name); },
+        onContextMenu: e => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, driverName: name, isoDate: day.isoDate, isUnavailable: onUnavail }); },
+        style: { position: "relative", background: baseColor, border: `1px solid ${onVac ? "#C9B6E8" : onUnavail ? "#E3B5B2" : "#E3E6E9"}`, borderRadius: "6px", padding: "4px", minHeight: "26px" }
+            },
+        onVac && React.createElement("div", { style: { fontSize: "12.5px", color: "#4B2E7A", fontWeight: 600, textAlign: "center", padding: "8px 0" } }, "Vakantie/vrij"),
+        onUnavail && React.createElement("div", { style: { fontSize: "12.5px", color: "#B0524E", fontWeight: 600, textAlign: "center", padding: "8px 0" } }, "Niet beschikbaar"),
         assigned.map(route => renderRouteChip(route, day, name))
       ));
     });
@@ -338,7 +370,7 @@ function RouteRooster() {
         React.createElement("p", { className: "no-print", style: { margin: "6px 0 0", fontSize: "13.5px", color: "#5A6472" } }, "Sleep een route naar een chauffeur om toe te wijzen. Onbezette routes blijven zichtbaar."),
         React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "10px", marginTop: "12px" } },
           React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(w => w - 1), style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "13px", color: "#1B2A4A", cursor: "pointer" } }, "← vorige week"),
-          React.createElement("span", { style: { fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#1B2A4A", minWidth: "120px", textAlign: "center" } }, weekLabel, weekOffset === 0 && React.createElement("span", { className: "no-print", style: { color: "#5A6472", marginLeft: "6px" } }, "(deze week)")),
+          React.createElement("span", { style: { fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#1B2A4A", minWidth: "120px", textAlign: "center" } }, weekLabel, React.createElement("span", { className: "no-print", style: { color: "#5A6472", marginLeft: "6px" } }, weekOffset === 0 ? "(deze week)" : `(week ${getISOWeekNumber(currentMonday)})`)),
           React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(w => w + 1), style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "13px", color: "#1B2A4A", cursor: "pointer" } }, "volgende week →"),
           weekOffset !== 0 && React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(0), style: { border: "none", background: "transparent", fontSize: "12.5px", color: "#5A6472", textDecoration: "underline", cursor: "pointer" } }, "naar vandaag")
         )
@@ -372,7 +404,7 @@ function RouteRooster() {
       React.createElement("button", { className: "rr-vac-add-btn", onClick: addVacation, style: { width: "100%", border: "1px solid #1B2A4A", background: "#1B2A4A", color: "#FFFFFF", borderRadius: "5px", padding: "6px 9px", fontSize: "12.5px", fontWeight: 600, cursor: "pointer", marginTop: "2px" } }, "Toevoegen")
     ),
     vacations.length > 0 && React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } },
-      vacations.map(v => {
+      vacations.filter(v => v.type !== "unavailable").map(v => {
         const isSameDay = v.start_date === v.end_date;
         const label = isSameDay
           ? formatDayDateWithYear(new Date(v.start_date))
@@ -410,7 +442,17 @@ function RouteRooster() {
       )
     ),
     loading && React.createElement("p", { className: "no-print", style: { fontSize: "12px", color: "#8A93A0", marginTop: "8px" } }, "Rooster laden…"),
-    React.createElement("p", { className: "no-print", style: { marginTop: "22px", fontSize: "12px", color: "#8A93A0", maxWidth: "520px" } }, "Alles wordt automatisch opgeslagen op de server, ook na een refresh of tussen sessies.")
+    React.createElement("p", { className: "no-print", style: { marginTop: "22px", fontSize: "12px", color: "#8A93A0", maxWidth: "520px" } }, "Alles wordt automatisch opgeslagen op de server, ook na een refresh of tussen sessies."),
+    contextMenu && React.createElement("div", { className: "no-print", onClick: () => setContextMenu(null), onContextMenu: e => { e.preventDefault(); setContextMenu(null); }, style: { position: "fixed", inset: 0, zIndex: 100 } },
+      React.createElement("div", { onClick: e => e.stopPropagation(), style: { position: "fixed", top: contextMenu.y, left: contextMenu.x, background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "6px", boxShadow: "0 4px 12px rgba(0,0,0,0.15)", padding: "4px", zIndex: 101, minWidth: "170px" } },
+        React.createElement("div", {
+          onClick: () => { toggleUnavailable(contextMenu.driverName, contextMenu.isoDate); setContextMenu(null); },
+          onMouseEnter: e => { e.currentTarget.style.background = "#F3F8F3"; },
+          onMouseLeave: e => { e.currentTarget.style.background = "transparent"; },
+          style: { padding: "6px 10px", fontSize: "13px", color: "#1B2A4A", cursor: "pointer", borderRadius: "4px" }
+        }, contextMenu.isUnavailable ? "Weer beschikbaar maken" : "Niet beschikbaar")
+      )
+    )
   );
 }
 
