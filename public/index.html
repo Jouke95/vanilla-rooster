@@ -268,6 +268,16 @@ function RouteRooster() {
     unassignedByDay[day.dayIndex] = day.routes.filter(r => !r.driver.trim());
   });
 
+  const vacationsByDriver = {};
+  vacations.filter(v => v.type !== "unavailable").forEach(v => {
+    if (!vacationsByDriver[v.driver_name]) vacationsByDriver[v.driver_name] = [];
+    vacationsByDriver[v.driver_name].push(v);
+  });
+  const sortedVacationDriverNames = Object.keys(vacationsByDriver).sort((a, b) => a.localeCompare(b));
+  sortedVacationDriverNames.forEach(name => {
+    vacationsByDriver[name].sort((a, b) => a.start_date.localeCompare(b.start_date));
+  });
+
   const handleDropOnCell = (e, dayIndex, targetDriverName) => {
     e.preventDefault();
     let data;
@@ -403,18 +413,23 @@ function RouteRooster() {
       ),
       React.createElement("button", { className: "rr-vac-add-btn", onClick: addVacation, style: { width: "100%", border: "1px solid #1B2A4A", background: "#1B2A4A", color: "#FFFFFF", borderRadius: "5px", padding: "6px 9px", fontSize: "12.5px", fontWeight: 600, cursor: "pointer", marginTop: "2px" } }, "Toevoegen")
     ),
-    vacations.length > 0 && React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } },
-      vacations.filter(v => v.type !== "unavailable").map(v => {
-        const isSameDay = v.start_date === v.end_date;
-        const label = isSameDay
-          ? formatDayDateWithYear(new Date(v.start_date))
-          : `${formatDayDateWithYear(new Date(v.start_date))} – ${formatDayDateWithYear(new Date(v.end_date))}`;
-        return React.createElement("div", { key: v.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", background: "#FBEDE0", border: "1px solid #E8A33D", borderRadius: "6px", padding: "4px 8px", fontSize: "12px", color: "#7A3B10" } },
-          React.createElement("span", null, v.driver_name, ": ", label),
-          React.createElement("span", { onClick: () => removeVacation(v.id), title: "Verwijderen", style: { cursor: "pointer", color: "#A9433F", flexShrink: 0 } }, "×")
-        );
-      })
-    )
+        sortedVacationDriverNames.length > 0 && React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "10px" } },
+          sortedVacationDriverNames.map(name => React.createElement("div", { key: name },
+            React.createElement("div", { style: { fontSize: "12px", fontWeight: 600, color: "#5A6472", marginBottom: "4px" } }, name),
+            React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "4px" } },
+              vacationsByDriver[name].map(v => {
+                const isSameDay = v.start_date === v.end_date;
+                const label = isSameDay
+                  ? formatDayDateWithYear(new Date(v.start_date))
+                  : `${formatDayDateWithYear(new Date(v.start_date))} – ${formatDayDateWithYear(new Date(v.end_date))}`;
+                return React.createElement("div", { key: v.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", background: "#FBEDE0", border: "1px solid #E8A33D", borderRadius: "6px", padding: "4px 8px", fontSize: "12px", color: "#7A3B10" } },
+                  React.createElement("span", null, label),
+                  React.createElement("span", { onClick: () => { if (window.confirm(`Vakantie van ${name} verwijderen?`)) removeVacation(v.id); }, title: "Verwijderen", style: { cursor: "pointer", color: "#A9433F", flexShrink: 0 } }, "×")
+                );
+              })
+            )
+          ))
+        )
   ),
   React.createElement("div", { style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px 14px" } },
     React.createElement("div", { style: { fontSize: "13px", fontWeight: 600, color: "#5A6472", marginBottom: "8px" } }, "Ingepland deze week"),
