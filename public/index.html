@@ -318,6 +318,7 @@ function RouteRooster() {
       .rr-driver-x { opacity: 0; transition: opacity 0.12s ease; cursor: pointer; }
       .rr-code-input { font-family: 'IBM Plex Mono', monospace; font-size: 14.5px; font-weight: 600; border: none; background: transparent; outline: none; width: 100%; color: #4A5568; letter-spacing: 0.01em; }
       .rr-add-btn:hover { background: #1B2A4A; color: #EDF0F2; }
+      .rr-vac-add-btn:hover { background: #14203a; border-color: #14203a; }
       @media print {
         .no-print { display: none !important; }
         body { background: #fff !important; }
@@ -356,32 +357,46 @@ function RouteRooster() {
     ),
     React.createElement("div", { style: { display: "flex", gap: "16px", alignItems: "flex-start", flexWrap: "wrap" } },
       React.createElement("div", { className: "rr-driver-grid", style: { display: "grid", gridTemplateColumns: "80px repeat(5, 200px)", gap: "5px", background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px" } }, gridChildren),
-      React.createElement("div", { className: "no-print", style: { flex: "1", minWidth: "220px", background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px 14px" } },
-        React.createElement("div", { style: { fontSize: "13px", fontWeight: 600, color: "#5A6472", marginBottom: "8px" } }, "Vakantie/vrij"),
-        React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "6px", marginBottom: "10px" } },
-          React.createElement("select", { value: vacDriver, onChange: e => setVacDriver(e.target.value), style: { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "13px", border: "1px solid #C9CDD3", borderRadius: "5px", padding: "4px 6px", background: "#FFFFFF", color: "#1B2A4A" } },
-            drivers.map(name => React.createElement("option", { key: name, value: name }, name))
-          ),
-          React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
-            React.createElement("input", { type: "date", value: vacStart, onChange: e => setVacStart(e.target.value), style: { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "12.5px", border: "1px solid #C9CDD3", borderRadius: "5px", padding: "3px 4px", color: "#1B2A4A", flex: 1, minWidth: 0 } }),
-            React.createElement("span", { style: { color: "#8A93A0", fontSize: "12px" } }, "t/m"),
-            React.createElement("input", { type: "date", value: vacEnd, onChange: e => setVacEnd(e.target.value), style: { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "12.5px", border: "1px solid #C9CDD3", borderRadius: "5px", padding: "3px 4px", color: "#1B2A4A", flex: 1, minWidth: 0 } })
-          ),
-          React.createElement("button", { onClick: addVacation, style: { border: "1px solid #C9CDD3", background: "transparent", borderRadius: "5px", padding: "4px 9px", fontSize: "12.5px", color: "#1B2A4A", cursor: "pointer" } }, "+ toevoegen")
-        ),
-        vacations.length > 0 && React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } },
-          vacations.map(v => {
-            const isSameDay = v.start_date === v.end_date;
-            const label = isSameDay
-              ? formatDayDateWithYear(new Date(v.start_date))
-              : `${formatDayDateWithYear(new Date(v.start_date))} – ${formatDayDateWithYear(new Date(v.end_date))}`;
-            return React.createElement("div", { key: v.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", background: "#FBEDE0", border: "1px solid #E8A33D", borderRadius: "6px", padding: "4px 8px", fontSize: "12px", color: "#7A3B10" } },
-              React.createElement("span", null, v.driver_name, ": ", label),
-              React.createElement("span", { onClick: () => removeVacation(v.id), title: "Verwijderen", style: { cursor: "pointer", color: "#A9433F", flexShrink: 0 } }, "×")
-            );
-          })
-        )
-      )
+      React.createElement("div", { className: "no-print", style: { display: "flex", flexDirection: "column", gap: "12px", width: "300px", flexShrink: 0 } },
+  React.createElement("div", { style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px 14px" } },
+    React.createElement("div", { style: { fontSize: "13px", fontWeight: 600, color: "#5A6472", marginBottom: "8px" } }, "Vakantie/vrij"),
+    React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "6px", marginBottom: "10px" } },
+      React.createElement("select", { value: vacDriver, onChange: e => setVacDriver(e.target.value), style: { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "13px", border: "1px solid #C9CDD3", borderRadius: "5px", padding: "4px 6px", background: "#FFFFFF", color: "#1B2A4A" } },
+        drivers.map(name => React.createElement("option", { key: name, value: name }, name))
+      ),
+      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
+        React.createElement("input", { type: "date", value: vacStart, onChange: e => setVacStart(e.target.value), style: { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "12.5px", border: "1px solid #C9CDD3", borderRadius: "5px", padding: "3px 4px", color: "#1B2A4A", flex: 1, minWidth: 0 } }),
+        React.createElement("span", { style: { color: "#8A93A0", fontSize: "12px" } }, "t/m"),
+        React.createElement("input", { type: "date", value: vacEnd, onChange: e => setVacEnd(e.target.value), style: { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "12.5px", border: "1px solid #C9CDD3", borderRadius: "5px", padding: "3px 4px", color: "#1B2A4A", flex: 1, minWidth: 0 } })
+      ),
+      React.createElement("button", { className: "rr-vac-add-btn", onClick: addVacation, style: { width: "100%", border: "1px solid #1B2A4A", background: "#1B2A4A", color: "#FFFFFF", borderRadius: "5px", padding: "6px 9px", fontSize: "12.5px", fontWeight: 600, cursor: "pointer", marginTop: "2px" } }, "Toevoegen")
+    ),
+    vacations.length > 0 && React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } },
+      vacations.map(v => {
+        const isSameDay = v.start_date === v.end_date;
+        const label = isSameDay
+          ? formatDayDateWithYear(new Date(v.start_date))
+          : `${formatDayDateWithYear(new Date(v.start_date))} – ${formatDayDateWithYear(new Date(v.end_date))}`;
+        return React.createElement("div", { key: v.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", background: "#FBEDE0", border: "1px solid #E8A33D", borderRadius: "6px", padding: "4px 8px", fontSize: "12px", color: "#7A3B10" } },
+          React.createElement("span", null, v.driver_name, ": ", label),
+          React.createElement("span", { onClick: () => removeVacation(v.id), title: "Verwijderen", style: { cursor: "pointer", color: "#A9433F", flexShrink: 0 } }, "×")
+        );
+      })
+    )
+  ),
+  React.createElement("div", { style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px 14px" } },
+    React.createElement("div", { style: { fontSize: "13px", fontWeight: 600, color: "#5A6472", marginBottom: "8px" } }, "Ingepland deze week"),
+    React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "4px" } },
+      drivers.map(name => {
+        const count = days.reduce((sum, day) => sum + driverDayRoutes[name][day.dayIndex].length, 0);
+        return React.createElement("div", { key: name, style: { display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: count === 0 ? "#A9433F" : "#1B2A4A" } },
+          React.createElement("span", null, name),
+          React.createElement("span", { style: { fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 } }, count)
+        );
+      })
+    )
+  )
+)
     ),
     React.createElement("div", { className: "no-print", style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px 14px", marginTop: "16px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" } },
       React.createElement("span", { style: { fontSize: "12.5px", color: "#5A6472", flexShrink: 0 } }, "Chauffeurs:"),
