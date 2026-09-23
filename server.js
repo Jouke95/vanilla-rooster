@@ -6,6 +6,11 @@ const { login, logout, requireLogin } = require('./auth');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Op Render komt al het verkeer via Renders proxy. Die proxy vertrouwen, zodat req.ip het adres van de bezoeker is
+// (voor de blokkade na foute pogingen) en req.secure https herkent (voor de Secure-cookie). Lokaal niet, anders
+// kan een bezoeker zelf een X-Forwarded-For meesturen om de blokkade te omzeilen.
+if (process.env.RENDER) app.set('trust proxy', 1);
+
 app.use(express.json());
 
 // Alleen het inlogscherm en inloggen zelf zijn zonder login bereikbaar

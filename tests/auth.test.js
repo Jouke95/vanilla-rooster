@@ -12,27 +12,33 @@ const BASE = `http://localhost:${PORT}`;
 // Lege TURSO_AUTH_TOKEN zodat dotenv de echte waarden uit .env niet gebruikt
 Object.assign(process.env, { TURSO_DATABASE_URL: `file:${path.join(dir, 'test.db')}`, TURSO_AUTH_TOKEN: '', PORT });
 
-let server;
+const servers = [];
 let setPassword;
 let db;
 const PASSWORD = 'correct horse battery';
 
-before(async () => {
-  server = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], { env: process.env, stdio: 'ignore' });
+async function startServer(extraEnv = {}) {
+  const env = { ...process.env, ...extraEnv };
+  servers.push(spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], { env, stdio: 'ignore' }));
   for (let i = 0; i < 100; i++) {
-    try { await fetch(`${BASE}/login`); break; } catch (err) { await new Promise(r => setTimeout(r, 100)); }
+    try { await fetch(`http://localhost:${env.PORT}/login`); return; } catch (err) { await new Promise(r => setTimeout(r, 100)); }
   }
+}
+
+before(async () => {
+  await startServer();
   ({ setPassword } = require('../auth'));
   ({ db } = require('../db'));
 });
 
 after(() => {
-  server.kill();
+  servers.forEach(s => s.kill());
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
 const get = (url, cookie) => fetch(BASE + url, { redirect: 'manual', headers: cookie ? { cookie } : {} });
-const login = password => fetch(`${BASE}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+const login = (password, { base = BASE, headers = {} } = {}) =>
+  fetch(`${base}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ password }) });
 const cookieFrom = res => res.headers.get('set-cookie').split(';')[0];
 
 test('zonder login: pagina stuurt door naar /login', async () => {
@@ -108,7 +114,7 @@ test('wachtwoord wijzigen logt iedereen uit', async () => {
   await setPassword(PASSWORD);
 });
 
-// Als laatste, want na deze test is dit IP-adres 15 minuten geblokkeerd
+// Na deze test is 127.0.0.1 15 minuten geblokkeerd; de tests hierna rekenen daarop
 test('na 5 foute pogingen 15 minuten geblokkeerd, ook met het juiste wachtwoord', async () => {
   // Eerdere tests deden al foute pogingen; een geslaagde login zet de teller op nul
   assert.strictEqual((await login(PASSWORD)).status, 200);
@@ -120,4 +126,24 @@ test('na 5 foute pogingen 15 minuten geblokkeerd, ook met het juiste wachtwoord'
   const blocked = await login(PASSWORD);
   assert.strictEqual(blocked.status, 429);
   assert.match((await blocked.json()).error, /15 minuten/);
+});
+
+test('lokaal: een zelf meegestuurd X-Forwarded-For omzeilt de blokkade niet', async () => {
+  // Dit IP is na de vorige test geblokkeerd
+  const res = await login(PASSWORD, { headers: { 'X-Forwarded-For': '203.0.113.99' } });
+  assert.strictEqual(res.status, 429);
+});
+
+test('op Render: blokkade per bezoeker en Secure-cookie via https', async () => {
+  const port = String(Number(PORT) + 1);
+  await startServer({ PORT: port, RENDER: 'true' });
+  const base = `http://localhost:${port}`;
+  const viaRender = ip => ({ base, headers: { 'X-Forwarded-For': ip, 'X-Forwarded-Proto': 'https' } });
+
+  for (let i = 0; i < 5; i++) await login('fout', viaRender('198.51.100.1'));
+  assert.strictEqual((await login(PASSWORD, viaRender('198.51.100.1'))).status, 429, 'bezoeker met 5 fouten geblokkeerd');
+
+  const other = await login(PASSWORD, viaRender('198.51.100.2'));
+  assert.strictEqual(other.status, 200, 'andere bezoeker kan gewoon inloggen');
+  assert.match(other.headers.get('set-cookie'), /Secure/);
 });
