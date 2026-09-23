@@ -838,11 +838,111 @@ function WarehouseRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw
   );
 }
 
+// Printversie met chauffeurs en magazijn in één tabel. Alleen zichtbaar bij printen.
+function CombinedPrint({ weekOffset, driversRaw, vacations, onDone }) {
+  const [data, setData] = useState(null);
+  const monday = addWeeks(getMondayOfThisWeek(), weekOffset);
+  const key = weekKey(monday);
+  const friday = new Date(monday);
+  friday.setDate(monday.getDate() + 4);
+  const days = groupRoutesByDay(monday, []);
+
+  useEffect(() => {
+    Promise.all([
+      fetch(`/api/routes?week_key=${key}`).then(r => r.json()),
+      fetch(`/api/warehouse-shifts?week_key=${key}`).then(r => r.json())
+    ]).then(([routes, shifts]) => setData({ routes, shifts }));
+  }, [key]);
+
+  useEffect(() => {
+    if (!data) return;
+    const timer = setTimeout(() => { window.print(); onDone(); }, 0);
+    return () => clearTimeout(timer);
+  }, [data]);
+
+  if (!data) return null;
+
+  const byName = (a, b) => a.name.localeCompare(b.name);
+  const drivers = driversRaw.filter(d => d.is_driver).sort(byName);
+  const warehouse = driversRaw.filter(d => d.is_warehouse).sort(byName);
+  const driverIds = new Set(drivers.map(d => d.id));
+  const shiftText = shift => shift.start_time ? `${shift.start_time}–${shift.end_time}` : "werkt";
+
+  // section is "driver" (alleen routes) of "warehouse" (alleen magazijntijden); iemand in beide teams staat in beide groepen
+  const cellContent = (person, day, section) => {
+    if (isOnVacation(vacations, person.name, day.isoDate)) return React.createElement("span", { style: { color: "#4B2E7A", fontWeight: 600 } }, "Vakantie/vrij");
+    if (isUnavailable(vacations, person.name, day.isoDate)) return React.createElement("span", { style: { color: "#B0524E", fontWeight: 600 } }, "Niet beschikbaar");
+    const lines = [];
+    if (section === "driver") {
+      data.routes.filter(r => r.driver_id === person.id && r.day_index === day.dayIndex)
+        .forEach(r => lines.push(React.createElement("div", { key: `r-${r.id}`, style: { fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 } }, r.code || "route")));
+    }
+    const shift = section === "warehouse" && data.shifts.find(s => s.driver_id === person.id && s.day_index === day.dayIndex);
+    if (shift) {
+      lines.push(React.createElement("div", { key: "mag", style: { fontFamily: "'IBM Plex Mono', monospace", color: "#2F6B3A", fontWeight: 600 } }, shiftText(shift)));
+    }
+    return lines;
+  };
+
+  const cellStyle = { border: "1px solid #D5D9DE", padding: "3px 5px", fontSize: "10.5px", verticalAlign: "top" };
+  const nameStyle = { ...cellStyle, fontWeight: 600, whiteSpace: "nowrap" };
+  const personRow = section => person => React.createElement("tr", { key: `${section}-${person.id}` },
+    React.createElement("td", { style: nameStyle }, person.name),
+    days.map(day => React.createElement("td", { key: day.id, style: cellStyle }, cellContent(person, day, section)))
+  );
+  const sectionRow = label => React.createElement("tr", { key: `section-${label}` },
+    React.createElement("td", { colSpan: 6, style: { padding: "8px 5px 3px", fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "12px", borderBottom: "2px solid #1B2A4A" } }, label)
+  );
+
+  const unassignedByDay = days.map(day => data.routes.filter(r => r.day_index === day.dayIndex && !driverIds.has(r.driver_id)));
+  const hasUnassigned = unassignedByDay.some(list => list.length > 0);
+
+  return React.createElement("div", { className: "rr-print-only", style: { fontFamily: "'IBM Plex Sans', system-ui, sans-serif", color: "#1B2A4A", padding: "6px" } },
+    React.createElement("style", null, `
+      .rr-print-only { display: none; }
+      @media print {
+        .no-print { display: none !important; }
+        .rr-print-only { display: block !important; }
+        body, html, #root { background: #fff !important; min-height: auto !important; }
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        .rr-print-only tr { break-inside: avoid; }
+      }
+    `),
+    React.createElement("h1", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "18px", fontWeight: 700, margin: "0 0 8px" } },
+      `Weekrooster week ${getISOWeekNumber(monday)} · ${formatDayDate(monday)} – ${formatDayDate(friday)}`),
+    React.createElement("table", { style: { width: "100%", borderCollapse: "collapse", tableLayout: "fixed" } },
+      React.createElement("colgroup", null,
+        React.createElement("col", { style: { width: "90px" } }),
+        days.map(day => React.createElement("col", { key: day.id }))
+      ),
+      React.createElement("thead", null,
+        React.createElement("tr", null,
+          React.createElement("th", { style: { ...cellStyle, border: "none" } }),
+          days.map(day => React.createElement("th", { key: day.id, style: { ...cellStyle, border: "none", textAlign: "left", fontFamily: "'Space Grotesk', sans-serif", fontSize: "11.5px" } }, `${day.name} `, React.createElement("span", { style: { fontWeight: 400, color: "#8A93A0" } }, day.date)))
+        )
+      ),
+      React.createElement("tbody", null,
+        drivers.length > 0 && sectionRow("Chauffeurs"),
+        drivers.map(personRow("driver")),
+        hasUnassigned && React.createElement("tr", { key: "unassigned" },
+          React.createElement("td", { style: { ...nameStyle, color: "#A9433F" } }, "Niet toegewezen"),
+          days.map((day, i) => React.createElement("td", { key: day.id, style: { ...cellStyle, background: "#FDF6EC" } },
+            unassignedByDay[i].map(r => React.createElement("div", { key: r.id, style: { fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 } }, r.code || "route"))
+          ))
+        ),
+        warehouse.length > 0 && sectionRow("Magazijn"),
+        warehouse.map(personRow("warehouse"))
+      )
+    )
+  );
+}
+
 function App() {
   const [tab, setTab] = useState("chauffeurs");
   const [weekOffset, setWeekOffset] = useState(0);
   const [driversRaw, setDriversRaw] = useState([]);
   const [vacations, setVacations] = useState([]);
+  const [combinedPrint, setCombinedPrint] = useState(false);
 
   useEffect(() => {
     fetch("/api/drivers").then(r => r.json()).then(setDriversRaw);
@@ -859,11 +959,15 @@ function App() {
   return React.createElement("div", { style: { minHeight: "100%", background: "#EDF0F2" } },
     React.createElement("div", { className: "no-print", style: { display: "flex", gap: "4px", padding: "14px 20px 0", borderBottom: "1px solid #C9CDD3", fontFamily: "'IBM Plex Sans', system-ui, sans-serif" } },
       tabButton("chauffeurs", "Chauffeurs"),
-      tabButton("magazijn", "Magazijn")
+      tabButton("magazijn", "Magazijn"),
+      React.createElement("button", { onClick: () => setCombinedPrint(true), disabled: combinedPrint, style: { marginLeft: "auto", alignSelf: "center", marginBottom: "6px", border: "1px solid #1B2A4A", background: "#1B2A4A", color: "#FFFFFF", borderRadius: "6px", padding: "6px 14px", fontSize: "13px", cursor: combinedPrint ? "wait" : "pointer" } }, "Print chauffeurs + magazijn")
     ),
-    tab === "chauffeurs"
-      ? React.createElement(RouteRooster, shared)
-      : React.createElement(WarehouseRooster, shared)
+    React.createElement("div", { className: combinedPrint ? "no-print" : "" },
+      tab === "chauffeurs"
+        ? React.createElement(RouteRooster, shared)
+        : React.createElement(WarehouseRooster, shared)
+    ),
+    combinedPrint && React.createElement(CombinedPrint, { weekOffset, driversRaw, vacations, onDone: () => setCombinedPrint(false) })
   );
 }
 
