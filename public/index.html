@@ -15,6 +15,36 @@
   <script>
     const { useState, useEffect } = React;
 
+// Alle serveraanroepen gaan via api(). Bij een fout verschijnt een melding (zie App);
+// na een mislukte wijziging wordt alles opnieuw van de server geladen.
+let onApiError = () => {};
+async function api(url, options = {}) {
+  const method = options.method || "GET";
+  const init = options.body === undefined
+    ? { method }
+    : { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(options.body) };
+  let res;
+  try {
+    res = await fetch(url, init);
+  } catch (err) {
+    throw reportApiError(method, "geen verbinding met de server");
+  }
+  if (!res.ok) {
+    let message = `serverfout (${res.status})`;
+    try { const data = await res.json(); if (data && data.error) message = data.error; } catch (err) {}
+    throw reportApiError(method, message);
+  }
+  return res.status === 204 ? null : res.json();
+}
+function reportApiError(method, message) {
+  const err = new Error(message);
+  err.reported = true;
+  onApiError({ saving: method !== "GET", message });
+  return err;
+}
+// Fouten die al als melding getoond zijn niet nog eens in de console gooien
+window.addEventListener("unhandledrejection", e => { if (e.reason && e.reason.reported) e.preventDefault(); });
+
 const DAY_NAMES = ["Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag"];
 function getMondayOfThisWeek() {
   const now = new Date();
@@ -130,18 +160,13 @@ function VacationPanel({ teamNames, driverIdByName, vacations, setVacations }) {
   const addVacation = async () => {
     if (!vacDriver || !vacStart || !vacEnd || vacStart > vacEnd) return;
     const driver_id = driverIdByName[vacDriver];
-    const res = await fetch("/api/vacations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ driver_id, start_date: vacStart, end_date: vacEnd, type: "vacation" })
-    });
-    const created = await res.json();
+    const created = await api("/api/vacations", { method: "POST", body: { driver_id, start_date: vacStart, end_date: vacEnd, type: "vacation" } });
     setVacations(prev => [...prev, { ...created, driver_name: vacDriver }]);
     setVacStart(""); setVacEnd("");
   };
 
   const removeVacation = async id => {
-    await fetch(`/api/vacations/${id}`, { method: "DELETE" });
+    await api(`/api/vacations/${id}`, { method: "DELETE" });
     setVacations(prev => prev.filter(v => v.id !== id));
   };
 
@@ -196,12 +221,7 @@ function PeopleBar({ team, label, otherLabel, driversRaw, setDriversRaw, setVaca
   const linkable = driversRaw.filter(d => !d[team] && d[otherTeam]).sort((a, b) => a.name.localeCompare(b.name));
 
   const setMembership = async (person, value) => {
-    const res = await fetch(`/api/drivers/${person.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ [team]: value })
-    });
-    const updated = await res.json();
+    const updated = await api(`/api/drivers/${person.id}`, { method: "PATCH", body: { [team]: value } });
     setDriversRaw(prev => prev.map(d => d.id === updated.id ? updated : d));
   };
 
@@ -214,12 +234,7 @@ function PeopleBar({ team, label, otherLabel, driversRaw, setDriversRaw, setVaca
       setNewName("");
       return;
     }
-    const res = await fetch("/api/drivers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, is_driver: team === "is_driver" ? 1 : 0, is_warehouse: team === "is_warehouse" ? 1 : 0 })
-    });
-    const created = await res.json();
+    const created = await api("/api/drivers", { method: "POST", body: { name, is_driver: team === "is_driver" ? 1 : 0, is_warehouse: team === "is_warehouse" ? 1 : 0 } });
     setDriversRaw(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
     setNewName("");
   };
@@ -229,7 +244,7 @@ function PeopleBar({ team, label, otherLabel, driversRaw, setDriversRaw, setVaca
       await setMembership(person, 0);
       return;
     }
-    await fetch(`/api/drivers/${person.id}`, { method: "DELETE" });
+    await api(`/api/drivers/${person.id}`, { method: "DELETE" });
     setDriversRaw(prev => prev.filter(d => d.id !== person.id));
     setVacations(prev => prev.filter(v => v.driver_name !== person.name));
   };
@@ -265,17 +280,12 @@ function UnavailableMenu({ menu, onClose, driverIdByName, vacations, setVacation
   const toggleUnavailable = async (driverName, isoDate) => {
     const existing = vacations.find(v => v.driver_name === driverName && v.type === "unavailable" && v.start_date === isoDate && v.end_date === isoDate);
     if (existing) {
-      await fetch(`/api/vacations/${existing.id}`, { method: "DELETE" });
+      await api(`/api/vacations/${existing.id}`, { method: "DELETE" });
       setVacations(prev => prev.filter(v => v.id !== existing.id));
       return;
     }
     const driver_id = driverIdByName[driverName];
-    const res = await fetch("/api/vacations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ driver_id, start_date: isoDate, end_date: isoDate, type: "unavailable" })
-    });
-    const created = await res.json();
+    const created = await api("/api/vacations", { method: "POST", body: { driver_id, start_date: isoDate, end_date: isoDate, type: "unavailable" } });
     setVacations(prev => [...prev, { ...created, driver_name: driverName }]);
   };
 
@@ -291,7 +301,7 @@ function UnavailableMenu({ menu, onClose, driverIdByName, vacations, setVacation
   );
 }
 
-function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, vacations, setVacations }) {
+function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, vacations, setVacations, reloadKey }) {
   const [rawRoutes, setRawRoutes] = useState([]);
   const [warehouseShifts, setWarehouseShifts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -310,55 +320,40 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
     let cancelled = false;
     async function loadWeek() {
       setLoading(true);
-      const res = await fetch(`/api/routes?week_key=${currentKey}`);
-      let routes = await res.json();
+      let routes = await api(`/api/routes?week_key=${currentKey}`);
       if (routes.length === 0) {
         for (let i = 0; i < SEED_ROUTES_PER_DAY.length; i++) {
           for (const r of SEED_ROUTES_PER_DAY[i]) {
-            await fetch("/api/routes", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ week_key: currentKey, day_index: i, code: r.code })
-            });
+            await api("/api/routes", { method: "POST", body: { week_key: currentKey, day_index: i, code: r.code } });
           }
         }
-        const res2 = await fetch(`/api/routes?week_key=${currentKey}`);
-        routes = await res2.json();
+        routes = await api(`/api/routes?week_key=${currentKey}`);
       }
       const routesWithFixed = routes.map(r => ({ ...r, fixed: isFixedRoute(r.day_index, r.code) }));
       if (!cancelled) { setRawRoutes(routesWithFixed); setLoading(false); }
     }
     loadWeek();
-    fetch(`/api/warehouse-shifts?week_key=${currentKey}`).then(r => r.json()).then(rows => { if (!cancelled) setWarehouseShifts(rows); });
+    api(`/api/warehouse-shifts?week_key=${currentKey}`).then(rows => { if (!cancelled) setWarehouseShifts(rows); });
     return () => { cancelled = true; };
-  }, [currentKey]);
+  }, [currentKey, reloadKey]);
 
   const isDriverOnVacation = (driverName, isoDate) => isOnVacation(vacations, driverName, isoDate);
   const isDriverUnavailable = (driverName, isoDate) => isUnavailable(vacations, driverName, isoDate);
 
   const addRoute = async dayIndex => {
-    const res = await fetch("/api/routes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ week_key: currentKey, day_index: dayIndex, code: "" })
-    });
-    const created = await res.json();
+    const created = await api("/api/routes", { method: "POST", body: { week_key: currentKey, day_index: dayIndex, code: "" } });
     setRawRoutes(prev => [...prev, { ...created, driver_name: null, fixed: false }]);
   };
 
   const removeRoute = async routeId => {
-    await fetch(`/api/routes/${routeId}`, { method: "DELETE" });
+    await api(`/api/routes/${routeId}`, { method: "DELETE" });
     setRawRoutes(prev => prev.filter(r => r.id !== routeId));
   };
 
   const updateRoute = async (routeId, field, value) => {
     setRawRoutes(prev => prev.map(r => r.id === routeId ? (field === "driver" ? { ...r, driver_name: value || null } : { ...r, code: value }) : r));
     const body = field === "driver" ? { driver_id: value ? driverIdByName[value] : null } : { code: value };
-    await fetch(`/api/routes/${routeId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
+    await api(`/api/routes/${routeId}`, { method: "PATCH", body });
   };
 
   const totalRoutes = days.reduce((sum, d) => sum + d.routes.length, 0);
@@ -601,7 +596,7 @@ function TemplateModal({ person, templates, weekLabel, onSave, onClose }) {
   );
 }
 
-function WarehouseRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, vacations, setVacations }) {
+function WarehouseRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, vacations, setVacations, reloadKey }) {
   const [shifts, setShifts] = useState(new Map());
   const [templates, setTemplates] = useState([]);
   const [routes, setRoutes] = useState([]);
@@ -621,14 +616,13 @@ function WarehouseRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw
   const shiftKey = (dayIndex, driverId) => `${dayIndex}-${driverId}`;
 
   const loadShifts = async () => {
-    const res = await fetch(`/api/warehouse-shifts?week_key=${currentKey}`);
-    const rows = await res.json();
+    const rows = await api(`/api/warehouse-shifts?week_key=${currentKey}`);
     return new Map(rows.map(r => [shiftKey(r.day_index, r.driver_id), { start_time: r.start_time, end_time: r.end_time }]));
   };
 
   useEffect(() => {
-    fetch("/api/warehouse-templates").then(r => r.json()).then(setTemplates);
-  }, []);
+    api("/api/warehouse-templates").then(setTemplates);
+  }, [reloadKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -636,19 +630,15 @@ function WarehouseRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw
       setLoading(true);
       // Deze en toekomstige weken krijgen bij de eerste keer openen het standaardrooster
       if (currentKey >= weekKey(getMondayOfThisWeek())) {
-        await fetch("/api/warehouse-shifts/apply-template", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ week_key: currentKey, only_if_new: true })
-        });
+        await api("/api/warehouse-shifts/apply-template", { method: "POST", body: { week_key: currentKey, only_if_new: true } });
       }
       const loaded = await loadShifts();
       if (!cancelled) { setShifts(loaded); setLoading(false); }
     }
     loadWeek();
-    fetch(`/api/routes?week_key=${currentKey}`).then(r => r.json()).then(rows => { if (!cancelled) setRoutes(rows); });
+    api(`/api/routes?week_key=${currentKey}`).then(rows => { if (!cancelled) setRoutes(rows); });
     return () => { cancelled = true; };
-  }, [currentKey]);
+  }, [currentKey, reloadKey]);
 
   // Routes die iemand uit het magazijnteam die dag als chauffeur rijdt
   const routeCodesFor = (person, dayIndex) => person.is_driver
@@ -662,21 +652,13 @@ function WarehouseRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw
   const saveShift = async (person, day, start_time, end_time) => {
     const key = shiftKey(day.dayIndex, person.id);
     setShifts(prev => new Map(prev).set(key, { start_time, end_time }));
-    await fetch("/api/warehouse-shifts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ week_key: currentKey, day_index: day.dayIndex, driver_id: person.id, start_time, end_time })
-    });
+    await api("/api/warehouse-shifts", { method: "POST", body: { week_key: currentKey, day_index: day.dayIndex, driver_id: person.id, start_time, end_time } });
   };
 
   const removeShift = async (person, day) => {
     const key = shiftKey(day.dayIndex, person.id);
     setShifts(prev => { const next = new Map(prev); next.delete(key); return next; });
-    await fetch("/api/warehouse-shifts", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ week_key: currentKey, day_index: day.dayIndex, driver_id: person.id })
-    });
+    await api("/api/warehouse-shifts", { method: "DELETE", body: { week_key: currentKey, day_index: day.dayIndex, driver_id: person.id } });
   };
 
   // Lege cel: meteen inplannen met de standaardtijden van die persoon. Ingevulde cel: tijden aanpassen.
@@ -692,28 +674,15 @@ function WarehouseRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw
   };
 
   const applyTemplate = async () => {
-    await fetch("/api/warehouse-shifts/apply-template", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ week_key: currentKey, only_if_new: false })
-    });
+    await api("/api/warehouse-shifts/apply-template", { method: "POST", body: { week_key: currentKey, only_if_new: false } });
     setShifts(await loadShifts());
   };
 
   const saveTemplate = async (person, days, applyToWeek) => {
-    const res = await fetch(`/api/warehouse-templates/${person.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ days })
-    });
-    const saved = await res.json();
+    const saved = await api(`/api/warehouse-templates/${person.id}`, { method: "PUT", body: { days } });
     setTemplates(prev => [...prev.filter(t => t.driver_id !== person.id), ...saved]);
     if (applyToWeek) {
-      await fetch(`/api/warehouse-shifts/apply-template/${person.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ week_key: currentKey })
-      });
+      await api(`/api/warehouse-shifts/apply-template/${person.id}`, { method: "POST", body: { week_key: currentKey } });
       setShifts(await loadShifts());
     }
     setTemplatePerson(null);
@@ -849,9 +818,9 @@ function CombinedPrint({ weekOffset, driversRaw, vacations, onDone }) {
 
   useEffect(() => {
     Promise.all([
-      fetch(`/api/routes?week_key=${key}`).then(r => r.json()),
-      fetch(`/api/warehouse-shifts?week_key=${key}`).then(r => r.json())
-    ]).then(([routes, shifts]) => setData({ routes, shifts }));
+      api(`/api/routes?week_key=${key}`),
+      api(`/api/warehouse-shifts?week_key=${key}`)
+    ]).then(([routes, shifts]) => setData({ routes, shifts }), onDone);
   }, [key]);
 
   useEffect(() => {
@@ -943,13 +912,23 @@ function App() {
   const [driversRaw, setDriversRaw] = useState([]);
   const [vacations, setVacations] = useState([]);
   const [combinedPrint, setCombinedPrint] = useState(false);
+  const [apiError, setApiError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    fetch("/api/drivers").then(r => r.json()).then(setDriversRaw);
-    fetch("/api/vacations").then(r => r.json()).then(setVacations);
+    onApiError = error => {
+      // Een melding over niet-opgeslagen werk niet laten overschrijven door een laadfout
+      setApiError(prev => (prev && prev.saving && !error.saving) ? prev : error);
+      if (error.saving) setReloadKey(k => k + 1);
+    };
   }, []);
 
-  const shared = { weekOffset, setWeekOffset, driversRaw, setDriversRaw, vacations, setVacations };
+  useEffect(() => {
+    api("/api/drivers").then(setDriversRaw);
+    api("/api/vacations").then(setVacations);
+  }, [reloadKey]);
+
+  const shared = { weekOffset, setWeekOffset, driversRaw, setDriversRaw, vacations, setVacations, reloadKey };
   const tabButton = (id, label) => React.createElement("button", {
     key: id,
     onClick: () => setTab(id),
@@ -966,6 +945,15 @@ function App() {
       tab === "chauffeurs"
         ? React.createElement(RouteRooster, shared)
         : React.createElement(WarehouseRooster, shared)
+    ),
+    apiError && React.createElement("div", { className: "no-print", role: "alert", style: { position: "fixed", top: "12px", left: "50%", transform: "translateX(-50%)", zIndex: 200, width: "min(560px, calc(100% - 32px))", boxSizing: "border-box", display: "flex", alignItems: "flex-start", gap: "10px", background: "#FBEAE9", border: "1px solid #C0433D", borderRadius: "8px", boxShadow: "0 4px 12px rgba(0,0,0,0.15)", padding: "10px 14px", fontFamily: "'IBM Plex Sans', system-ui, sans-serif", fontSize: "13px", color: "#7A1F1B" } },
+      React.createElement("div", { style: { flex: 1 } },
+        React.createElement("div", { style: { fontWeight: 600 } }, apiError.saving ? `Niet opgeslagen: ${apiError.message}` : `Kon gegevens niet laden: ${apiError.message}`),
+        React.createElement("div", { style: { marginTop: "2px", color: "#9A3A35" } }, apiError.saving
+          ? "Het rooster is opnieuw geladen van de server. Controleer je laatste wijziging en probeer het opnieuw."
+          : "Controleer of de server draait en ververs de pagina.")
+      ),
+      React.createElement("span", { onClick: () => setApiError(null), title: "Sluiten", style: { cursor: "pointer", fontSize: "16px", lineHeight: 1, color: "#A9433F" } }, "×")
     ),
     combinedPrint && React.createElement(CombinedPrint, { weekOffset, driversRaw, vacations, onDone: () => setCombinedPrint(false) })
   );
