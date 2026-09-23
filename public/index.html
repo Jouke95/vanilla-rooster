@@ -29,12 +29,26 @@ async function api(url, options = {}) {
   } catch (err) {
     throw reportApiError(method, "geen verbinding met de server");
   }
+  if (res.status === 401) {
+    // Sessie verlopen of uitgelogd: terug naar het inlogscherm, zonder foutmelding
+    goToLogin();
+    const err = new Error("niet ingelogd");
+    err.reported = true;
+    throw err;
+  }
   if (!res.ok) {
     let message = `serverfout (${res.status})`;
     try { const data = await res.json(); if (data && data.error) message = data.error; } catch (err) {}
     throw reportApiError(method, message);
   }
   return res.status === 204 ? null : res.json();
+}
+function goToLogin() {
+  window.location.href = "/login";
+}
+async function logout() {
+  await api("/api/logout", { method: "POST" }).catch(() => {});
+  goToLogin();
 }
 function reportApiError(method, message) {
   const err = new Error(message);
@@ -985,7 +999,8 @@ function App() {
     React.createElement("div", { className: "no-print", style: { display: "flex", gap: "4px", padding: "14px 20px 0", borderBottom: "1px solid #C9CDD3", fontFamily: "'IBM Plex Sans', system-ui, sans-serif" } },
       tabButton("chauffeurs", "Chauffeurs"),
       tabButton("magazijn", "Magazijn"),
-      React.createElement("button", { onClick: () => setCombinedPrint(true), disabled: combinedPrint, style: { marginLeft: "auto", alignSelf: "center", marginBottom: "6px", border: "1px solid #1B2A4A", background: "#1B2A4A", color: "#FFFFFF", borderRadius: "6px", padding: "6px 14px", fontSize: "13px", cursor: combinedPrint ? "wait" : "pointer" } }, "Print chauffeurs + magazijn")
+      React.createElement("button", { onClick: () => setCombinedPrint(true), disabled: combinedPrint, style: { marginLeft: "auto", alignSelf: "center", marginBottom: "6px", border: "1px solid #1B2A4A", background: "#1B2A4A", color: "#FFFFFF", borderRadius: "6px", padding: "6px 14px", fontSize: "13px", cursor: combinedPrint ? "wait" : "pointer" } }, "Print chauffeurs + magazijn"),
+      React.createElement("button", { onClick: logout, style: { alignSelf: "center", marginBottom: "6px", border: "1px solid #C9CDD3", background: "#FFFFFF", color: "#1B2A4A", borderRadius: "6px", padding: "6px 12px", fontSize: "13px", cursor: "pointer" } }, "Uitloggen")
     ),
     React.createElement("div", { className: combinedPrint ? "no-print" : "" },
       tab === "chauffeurs"

@@ -60,6 +60,18 @@ async function initSchema() {
     CREATE TABLE IF NOT EXISTS warehouse_weeks (
       week_key TEXT PRIMARY KEY
     );
+
+    -- Instellingen, o.a. de scrypt-hash van het gedeelde wachtwoord (key 'password_hash')
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    -- Inlogsessies; token_hash is een sha256 van de sessiecode in de cookie
+    CREATE TABLE IF NOT EXISTS sessions (
+      token_hash TEXT PRIMARY KEY,
+      expires_at TEXT NOT NULL
+    );
   `);
 
   // Migraties voor databases die zijn aangemaakt vóór deze kolommen bestonden

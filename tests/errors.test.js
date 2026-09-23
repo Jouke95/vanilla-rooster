@@ -51,6 +51,21 @@ test('Foutmeldingen bij mislukt opslaan of laden', async t => {
   check('Servermelding bij 400 wordt getoond', banner() && banner().textContent.includes('Niet opgeslagen: week_key en day_index zijn verplicht'));
   check('Melding niet geprint (no-print)', banner().className === 'no-print');
 
+  // 5. Sessie verlopen (401): naar het inlogscherm, geen rode melding
+  let loginRedirects = 0;
+  w.goToLogin = () => { loginRedirects++; };
+  await act(async () => { byText('×', 'span').find(e => e.title === 'Sluiten').click(); });
+  state.failNext = { match: (m, u) => m === 'POST' && u === '/api/routes', status: 401, body: { error: 'niet ingelogd' } };
+  await act(async () => { byText('+ route', 'button')[0].click(); }); await tick();
+  check('401: doorgestuurd naar inlogscherm', loginRedirects === 1);
+  check('401: geen foutmelding', !banner());
+
+  // 6. Uitloggen
+  const beforeLogout = calls.length;
+  await act(async () => { byText('Uitloggen', 'button')[0].click(); }); await tick();
+  check('Uitloggen stuurt POST /api/logout', calls.slice(beforeLogout).some(c => c.startsWith('POST /api/logout')));
+  check('Uitloggen gaat naar inlogscherm', loginRedirects === 2);
+
   await tick();
   check('Geen onverwachte (niet getoonde) fouten', unexpectedErrors.length === 0);
 

@@ -1,10 +1,19 @@
 require('dotenv').config();
+const path = require('path');
 const express = require('express');
 const { db, initSchema } = require('./db');
+const { login, logout, requireLogin } = require('./auth');
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+
+// Alleen het inlogscherm en inloggen zelf zijn zonder login bereikbaar
+app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
+app.post('/api/login', login);
+app.post('/api/logout', logout);
+app.use(requireLogin);
+
 app.use(express.static('public'));
 
 app.get('/api/drivers', async (req, res) => {
@@ -257,7 +266,11 @@ app.use((err, req, res, next) => {
 });
 
 initSchema()
-  .then(() => {
+  .then(async () => {
+    const password = await db.execute("SELECT 1 FROM settings WHERE key = 'password_hash'");
+    if (password.rows.length === 0) {
+      console.warn('Let op: er is nog geen wachtwoord ingesteld, dus niemand kan inloggen. Stel het in met: npm run set-password');
+    }
     app.listen(PORT, () => {
       console.log(`Server draait op http://localhost:${PORT}`);
     });
