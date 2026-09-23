@@ -535,10 +535,12 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
 const DEFAULT_SHIFT = { start_time: "07:00", end_time: "16:30" };
 const inputStyle = { fontFamily: "'IBM Plex Mono', monospace", fontSize: "12.5px", border: "1px solid #C9CDD3", borderRadius: "5px", padding: "3px 4px", color: "#1B2A4A" };
 const isValidTimes = (start, end) => !!start && !!end && start < end;
+// Gewerkte minuten; bij een dienst langer dan 5,5 uur gaat er een half uur pauze af
 function shiftMinutes(shift) {
   if (!shift || !shift.start_time || !shift.end_time) return 0;
   const toMin = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
-  return toMin(shift.end_time) - toMin(shift.start_time);
+  const duration = toMin(shift.end_time) - toMin(shift.start_time);
+  return duration > 5.5 * 60 ? duration - 30 : duration;
 }
 function formatHours(minutes) {
   return (Math.round(minutes / 60 * 100) / 100).toLocaleString("nl-NL");
