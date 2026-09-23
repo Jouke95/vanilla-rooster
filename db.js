@@ -20,6 +20,7 @@ async function initSchema() {
       driver_id INTEGER NOT NULL,
       start_date TEXT NOT NULL,
       end_date TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'vacation',
       FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE
     );
 
@@ -32,6 +33,12 @@ async function initSchema() {
       FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE SET NULL
     );
   `);
+
+  // Migratie voor databases die zijn aangemaakt vóór de 'type'-kolom bestond
+  const columns = await db.execute('PRAGMA table_info(vacations)');
+  if (!columns.rows.some((col) => col.name === 'type')) {
+    await db.execute("ALTER TABLE vacations ADD COLUMN type TEXT NOT NULL DEFAULT 'vacation'");
+  }
 }
 
 module.exports = { db, initSchema };

@@ -22,7 +22,10 @@ app.post('/api/drivers', async (req, res) => {
     });
     res.status(201).json({ id: Number(result.lastInsertRowid), name });
   } catch (err) {
-    res.status(400).json({ error: 'naam bestaat al' });
+    if (String(err.message).includes('UNIQUE')) {
+      return res.status(400).json({ error: 'naam bestaat al' });
+    }
+    throw err;
   }
 });
 
@@ -109,6 +112,12 @@ app.patch('/api/routes/:id', async (req, res) => {
 app.delete('/api/routes/:id', async (req, res) => {
   await db.execute({ sql: 'DELETE FROM routes WHERE id = ?', args: [req.params.id] });
   res.status(204).send();
+});
+
+// Express 5 stuurt fouten uit async handlers hierheen; geef JSON terug i.p.v. een HTML-foutpagina
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(500).json({ error: 'serverfout' });
 });
 
 initSchema()
