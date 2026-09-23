@@ -114,19 +114,23 @@ app.post('/api/routes', async (req, res) => {
 });
 
 app.patch('/api/routes/:id', async (req, res) => {
-  const { code, driver_id } = req.body;
+  const { code, driver_id, day_index } = req.body;
+  if (day_index !== undefined && !(Number.isInteger(day_index) && day_index >= 0 && day_index <= 4)) {
+    return res.status(400).json({ error: 'day_index moet 0 t/m 4 zijn' });
+  }
   const existingResult = await db.execute({ sql: 'SELECT * FROM routes WHERE id = ?', args: [req.params.id] });
   const existing = existingResult.rows[0];
   if (!existing) return res.status(404).json({ error: 'route niet gevonden' });
 
   const newCode = code !== undefined ? code : existing.code;
   const newDriverId = driver_id !== undefined ? driver_id : existing.driver_id;
+  const newDayIndex = day_index !== undefined ? day_index : existing.day_index;
 
   await db.execute({
-    sql: 'UPDATE routes SET code = ?, driver_id = ? WHERE id = ?',
-    args: [newCode, newDriverId, req.params.id],
+    sql: 'UPDATE routes SET code = ?, driver_id = ?, day_index = ? WHERE id = ?',
+    args: [newCode, newDriverId, newDayIndex, req.params.id],
   });
-  res.json({ id: Number(req.params.id), week_key: existing.week_key, day_index: existing.day_index, code: newCode, driver_id: newDriverId });
+  res.json({ id: Number(req.params.id), week_key: existing.week_key, day_index: newDayIndex, code: newCode, driver_id: newDriverId });
 });
 
 app.delete('/api/routes/:id', async (req, res) => {
@@ -148,6 +152,12 @@ app.get('/api/warehouse-shifts', async (req, res) => {
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
+// skip_days: dagen (0-4) die het standaardrooster overslaat, zoals feestdagen. Levert een veilig SQL-stukje op.
+function skipDaysClause(skipDays, column) {
+  const days = (Array.isArray(skipDays) ? skipDays : []).filter(d => Number.isInteger(d) && d >= 0 && d <= 4);
+  return days.length ? ` AND ${column} NOT IN (${days.join(', ')})` : '';
+}
+
 // Dienst aanmaken of de tijden van een bestaande dienst aanpassen
 app.post('/api/warehouse-shifts', async (req, res) => {
   const { week_key, day_index, driver_id, start_time, end_time } = req.body;
@@ -168,7 +178,7 @@ app.post('/api/warehouse-shifts', async (req, res) => {
 // Standaardrooster invullen voor iedereen in het magazijnteam die die week nog geen diensten heeft.
 // Met only_if_new gebeurt dat alleen de eerste keer dat de week wordt geopend.
 app.post('/api/warehouse-shifts/apply-template', async (req, res) => {
-  const { week_key, only_if_new } = req.body;
+  const { week_key, only_if_new, skip_days } = req.body;
   if (!week_key) return res.status(400).json({ error: 'week_key is verplicht' });
   // Zonder standaardroosters niets markeren, anders krijgt deze week later nooit meer het standaardrooster
   const templateCount = await db.execute('SELECT COUNT(*) AS n FROM warehouse_templates');
@@ -181,7 +191,7 @@ app.post('/api/warehouse-shifts/apply-template', async (req, res) => {
           FROM warehouse_templates t
           JOIN drivers d ON d.id = t.driver_id
           WHERE d.is_warehouse = 1
-            AND t.driver_id NOT IN (SELECT driver_id FROM warehouse_shifts WHERE week_key = ?)`,
+            AND t.driver_id NOT IN (SELECT driver_id FROM warehouse_shifts WHERE week_key = ?)${skipDaysClause(skip_days, 't.day_index')}`,
     args: [week_key, week_key],
   });
   res.json({ applied: true });
@@ -201,14 +211,14 @@ app.delete('/api/warehouse-shifts', async (req, res) => {
 
 // Vervangt de diensten van één persoon in een week door diens standaardrooster
 app.post('/api/warehouse-shifts/apply-template/:driverId', async (req, res) => {
-  const { week_key } = req.body;
+  const { week_key, skip_days } = req.body;
   if (!week_key) return res.status(400).json({ error: 'week_key is verplicht' });
   const driverId = Number(req.params.driverId);
   await db.batch([
     { sql: 'DELETE FROM warehouse_shifts WHERE week_key = ? AND driver_id = ?', args: [week_key, driverId] },
     {
       sql: `INSERT INTO warehouse_shifts (week_key, day_index, driver_id, start_time, end_time)
-            SELECT ?, day_index, driver_id, start_time, end_time FROM warehouse_templates WHERE driver_id = ?`,
+            SELECT ?, day_index, driver_id, start_time, end_time FROM warehouse_templates WHERE driver_id = ?${skipDaysClause(skip_days, 'day_index')}`,
       args: [week_key, driverId],
     },
   ], 'write');

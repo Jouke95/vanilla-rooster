@@ -121,6 +121,39 @@ function getISOWeekNumber(date) {
   return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
 }
 
+// Nederlandse feestdagen die op een werkdag kunnen vallen (zonder Goede Vrijdag en Bevrijdingsdag)
+function getHolidays(year) {
+  // Paasdatum volgens het algoritme van Meeus/Jones/Butcher
+  const a = year % 19, b = Math.floor(year / 100), c = year % 100;
+  const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31), day = ((h + l - 7 * m + 114) % 31) + 1;
+  const easter = new Date(year, month - 1, day);
+  const afterEaster = n => { const x = new Date(easter); x.setDate(easter.getDate() + n); return x; };
+  const kingsDay = new Date(year, 3, 27);
+  if (kingsDay.getDay() === 0) kingsDay.setDate(26);
+  return {
+    [weekKey(new Date(year, 0, 1))]: "Nieuwjaarsdag",
+    [weekKey(afterEaster(1))]: "2e Paasdag",
+    [weekKey(kingsDay)]: "Koningsdag",
+    [weekKey(afterEaster(39))]: "Hemelvaartsdag",
+    [weekKey(afterEaster(50))]: "2e Pinksterdag",
+    [weekKey(new Date(year, 11, 25))]: "1e Kerstdag",
+    [weekKey(new Date(year, 11, 26))]: "2e Kerstdag"
+  };
+}
+function holidayName(isoDate) {
+  return getHolidays(Number(isoDate.slice(0, 4)))[isoDate] || null;
+}
+
+function dayHeader(day) {
+  return React.createElement("div", { key: `hdr-${day.id}`, style: { fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: "12.5px", padding: "4px 2px" } },
+    day.name, " ", React.createElement("span", { style: { fontSize: "10.5px", color: "#8A93A0", fontWeight: 400, fontFamily: "'IBM Plex Mono', monospace" } }, day.date),
+    day.holiday && React.createElement("div", { className: "rr-holiday-label", style: { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "11px", fontWeight: 600, color: "#9A5B0B", background: "#FDF1DC", border: "1px solid #E8C58A", borderRadius: "4px", padding: "1px 6px", marginTop: "3px", display: "inline-block" } }, day.holiday)
+  );
+}
+
 function groupRoutesByDay(monday, rawRoutes) {
   return DAY_NAMES.map((name, i) => {
     const dateObj = new Date(monday);
@@ -131,6 +164,7 @@ function groupRoutesByDay(monday, rawRoutes) {
       name,
       date: formatDayDate(dateObj),
       isoDate: weekKey(dateObj),
+      holiday: holidayName(weekKey(dateObj)),
       routes: rawRoutes.filter(r => r.day_index === i).map(r => ({ id: r.id, code: r.code, driver: r.driver_name || "", fixed: r.fixed }))
     };
   });
@@ -350,6 +384,11 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
     setRawRoutes(prev => prev.filter(r => r.id !== routeId));
   };
 
+  const moveRoute = async (routeId, dayIndex, driverName) => {
+    setRawRoutes(prev => prev.map(r => r.id === routeId ? { ...r, day_index: dayIndex, driver_name: driverName || null, fixed: isFixedRoute(dayIndex, r.code) } : r));
+    await api(`/api/routes/${routeId}`, { method: "PATCH", body: { day_index: dayIndex, driver_id: driverName ? driverIdByName[driverName] : null } });
+  };
+
   const updateRoute = async (routeId, field, value) => {
     setRawRoutes(prev => prev.map(r => r.id === routeId ? (field === "driver" ? { ...r, driver_name: value || null } : { ...r, code: value }) : r));
     const body = field === "driver" ? { driver_id: value ? driverIdByName[value] : null } : { code: value };
@@ -386,7 +425,12 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
     e.preventDefault();
     let data;
     try { data = JSON.parse(e.dataTransfer.getData("text/plain")); } catch (err) { return; }
-    if (!data || data.dayIndex !== dayIndex) return;
+    if (!data) return;
+    if (data.dayIndex !== dayIndex) {
+      // Alleen routes van een feestdag mogen naar een andere dag
+      if (days[data.dayIndex].holiday) moveRoute(data.routeId, dayIndex, targetDriverName);
+      return;
+    }
     updateRoute(data.routeId, "driver", targetDriverName || "");
   };
 
@@ -409,7 +453,7 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
   const gridChildren = [];
   gridChildren.push(React.createElement("div", { key: "hdr-empty" }, ""));
   days.forEach(day => gridChildren.push(
-    React.createElement("div", { key: `hdr-${day.id}`, style: { fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: "12.5px", padding: "4px 2px" } }, day.name, " ", React.createElement("span", { style: { fontSize: "10.5px", color: "#8A93A0", fontWeight: 400, fontFamily: "'IBM Plex Mono', monospace" } }, day.date))
+    dayHeader(day)
   ));
 
     const totalUnassigned = days.reduce((sum, d) => sum + unassignedByDay[d.dayIndex].length, 0);
@@ -425,6 +469,7 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
       onDrop: e => { e.currentTarget.style.background = "#FDF6EC"; handleDropOnCell(e, day.dayIndex, null); },
       style: { background: "#FDF6EC", border: "1px solid #E8A33D", borderRadius: "6px", padding: "4px", minHeight: "26px" }
     },
+      day.holiday && list.length > 0 && React.createElement("div", { className: "no-print", style: { fontSize: "11px", color: "#9A5B0B", marginBottom: "4px" } }, "Feestdag: sleep routes naar een andere dag"),
       list.map(route => renderRouteChip(route, day, null)),
       React.createElement("button", { className: "rr-add-btn no-print", onClick: () => addRoute(day.dayIndex), style: { width: "100%", marginTop: "2px", padding: "4px 0", borderRadius: "5px", border: "1px dashed #B8BFC6", background: "transparent", color: "#5A6472", fontSize: "11px", cursor: "pointer" } }, "+ route")
     ));
@@ -614,6 +659,7 @@ function WarehouseRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw
   currentFriday.setDate(currentMonday.getDate() + 4);
   const weekLabel = `${formatDayDate(currentMonday)} – ${formatDayDate(currentFriday)}`;
   const shiftKey = (dayIndex, driverId) => `${dayIndex}-${driverId}`;
+  const holidayDays = days.filter(d => d.holiday).map(d => d.dayIndex);
 
   const loadShifts = async () => {
     const rows = await api(`/api/warehouse-shifts?week_key=${currentKey}`);
@@ -630,7 +676,7 @@ function WarehouseRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw
       setLoading(true);
       // Deze en toekomstige weken krijgen bij de eerste keer openen het standaardrooster
       if (currentKey >= weekKey(getMondayOfThisWeek())) {
-        await api("/api/warehouse-shifts/apply-template", { method: "POST", body: { week_key: currentKey, only_if_new: true } });
+        await api("/api/warehouse-shifts/apply-template", { method: "POST", body: { week_key: currentKey, only_if_new: true, skip_days: holidayDays } });
       }
       const loaded = await loadShifts();
       if (!cancelled) { setShifts(loaded); setLoading(false); }
@@ -674,7 +720,7 @@ function WarehouseRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw
   };
 
   const applyTemplate = async () => {
-    await api("/api/warehouse-shifts/apply-template", { method: "POST", body: { week_key: currentKey, only_if_new: false } });
+    await api("/api/warehouse-shifts/apply-template", { method: "POST", body: { week_key: currentKey, only_if_new: false, skip_days: holidayDays } });
     setShifts(await loadShifts());
   };
 
@@ -682,7 +728,7 @@ function WarehouseRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw
     const saved = await api(`/api/warehouse-templates/${person.id}`, { method: "PUT", body: { days } });
     setTemplates(prev => [...prev.filter(t => t.driver_id !== person.id), ...saved]);
     if (applyToWeek) {
-      await api(`/api/warehouse-shifts/apply-template/${person.id}`, { method: "POST", body: { week_key: currentKey } });
+      await api(`/api/warehouse-shifts/apply-template/${person.id}`, { method: "POST", body: { week_key: currentKey, skip_days: holidayDays } });
       setShifts(await loadShifts());
     }
     setTemplatePerson(null);
@@ -696,7 +742,7 @@ function WarehouseRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw
   const gridChildren = [];
   gridChildren.push(React.createElement("div", { key: "hdr-empty" }, ""));
   days.forEach(day => gridChildren.push(
-    React.createElement("div", { key: `hdr-${day.id}`, style: { fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: "12.5px", padding: "4px 2px" } }, day.name, " ", React.createElement("span", { style: { fontSize: "10.5px", color: "#8A93A0", fontWeight: 400, fontFamily: "'IBM Plex Mono', monospace" } }, day.date))
+    dayHeader(day)
   ));
 
   people.forEach(person => {
@@ -707,8 +753,8 @@ function WarehouseRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw
       const shift = shiftFor(person, day);
       const working = !!shift;
       const routeCodes = onVac || onUnavail ? [] : routeCodesFor(person, day.dayIndex);
-      const background = onVac ? "#F1EAFB" : onUnavail ? "#FBEEED" : working ? "#DDEFE0" : "#FFFFFF";
-      const border = onVac ? "#C9B6E8" : onUnavail ? "#E3B5B2" : working ? "#7DB587" : "#E3E6E9";
+      const background = onVac ? "#F1EAFB" : onUnavail ? "#FBEEED" : working ? "#DDEFE0" : day.holiday ? "#FDF8EE" : "#FFFFFF";
+      const border = onVac ? "#C9B6E8" : onUnavail ? "#E3B5B2" : working ? "#7DB587" : day.holiday ? "#EBD9B8" : "#E3E6E9";
       gridChildren.push(React.createElement("div", {
         key: `cell-${person.id}-${day.id}`,
         className: "rr-shift-cell" + (onVac || onUnavail ? "" : " rr-shift-toggle"),
@@ -887,7 +933,7 @@ function CombinedPrint({ weekOffset, driversRaw, vacations, onDone }) {
       React.createElement("thead", null,
         React.createElement("tr", null,
           React.createElement("th", { style: { ...cellStyle, border: "none" } }),
-          days.map(day => React.createElement("th", { key: day.id, style: { ...cellStyle, border: "none", textAlign: "left", fontFamily: "'Space Grotesk', sans-serif", fontSize: "11.5px" } }, `${day.name} `, React.createElement("span", { style: { fontWeight: 400, color: "#8A93A0" } }, day.date)))
+          days.map(day => React.createElement("th", { key: day.id, style: { ...cellStyle, border: "none", textAlign: "left", fontFamily: "'Space Grotesk', sans-serif", fontSize: "11.5px" } }, `${day.name} `, React.createElement("span", { style: { fontWeight: 400, color: "#8A93A0" } }, day.date), day.holiday && React.createElement("div", { style: { color: "#9A5B0B", fontSize: "10px" } }, day.holiday)))
         )
       ),
       React.createElement("tbody", null,
