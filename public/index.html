@@ -106,19 +106,198 @@ function groupRoutesByDay(monday, rawRoutes) {
   });
 }
 
-function RouteRooster() {
-  const [weekOffset, setWeekOffset] = useState(0);
-  const [rawRoutes, setRawRoutes] = useState([]);
-  const [driversRaw, setDriversRaw] = useState([]);
-  const [newDriver, setNewDriver] = useState("");
-  const [vacations, setVacations] = useState([]);
+function isOnVacation(vacations, driverName, isoDate) {
+  return vacations.some(v => v.driver_name === driverName && v.type !== "unavailable" && isoDate >= v.start_date && isoDate <= v.end_date);
+}
+function isUnavailable(vacations, driverName, isoDate) {
+  return vacations.some(v => v.driver_name === driverName && v.type === "unavailable" && isoDate >= v.start_date && isoDate <= v.end_date);
+}
+
+// Label in een roostercel als iemand die dag ook in het andere rooster staat; oranje bij dubbele inplanning
+function CrossLabel({ warn, children }) {
+  return React.createElement("div", { title: warn ? "Dubbel ingepland: rijdt én magazijn" : undefined, style: { fontSize: "11px", fontWeight: 600, color: warn ? "#A9433F" : "#8A93A0", background: warn ? "#FBEDE0" : "transparent", border: warn ? "1px solid #E8A33D" : "1px solid transparent", borderRadius: "4px", padding: "1px 5px", marginBottom: "3px", textAlign: "center" } }, warn ? "⚠ " : "", children);
+}
+
+function VacationPanel({ teamNames, driverIdByName, vacations, setVacations }) {
   const [vacDriver, setVacDriver] = useState("");
   const [vacStart, setVacStart] = useState("");
   const [vacEnd, setVacEnd] = useState("");
+
+  useEffect(() => {
+    if (!teamNames.includes(vacDriver) && teamNames.length > 0) setVacDriver(teamNames[0]);
+  }, [teamNames.join("|")]);
+
+  const addVacation = async () => {
+    if (!vacDriver || !vacStart || !vacEnd || vacStart > vacEnd) return;
+    const driver_id = driverIdByName[vacDriver];
+    const res = await fetch("/api/vacations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ driver_id, start_date: vacStart, end_date: vacEnd, type: "vacation" })
+    });
+    const created = await res.json();
+    setVacations(prev => [...prev, { ...created, driver_name: vacDriver }]);
+    setVacStart(""); setVacEnd("");
+  };
+
+  const removeVacation = async id => {
+    await fetch(`/api/vacations/${id}`, { method: "DELETE" });
+    setVacations(prev => prev.filter(v => v.id !== id));
+  };
+
+  const vacationsByDriver = {};
+  vacations.filter(v => v.type !== "unavailable" && teamNames.includes(v.driver_name)).forEach(v => {
+    if (!vacationsByDriver[v.driver_name]) vacationsByDriver[v.driver_name] = [];
+    vacationsByDriver[v.driver_name].push(v);
+  });
+  const sortedVacationDriverNames = Object.keys(vacationsByDriver).sort((a, b) => a.localeCompare(b));
+  sortedVacationDriverNames.forEach(name => {
+    vacationsByDriver[name].sort((a, b) => a.start_date.localeCompare(b.start_date));
+  });
+
+  return React.createElement("div", { style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px 14px" } },
+    React.createElement("div", { style: { fontSize: "13px", fontWeight: 600, color: "#5A6472", marginBottom: "8px" } }, "Vakantie/vrij"),
+    React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "6px", marginBottom: "10px" } },
+      React.createElement("select", { value: vacDriver, onChange: e => setVacDriver(e.target.value), style: { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "13px", border: "1px solid #C9CDD3", borderRadius: "5px", padding: "4px 6px", background: "#FFFFFF", color: "#1B2A4A" } },
+        teamNames.map(name => React.createElement("option", { key: name, value: name }, name))
+      ),
+      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
+        React.createElement("input", { type: "date", value: vacStart, onChange: e => setVacStart(e.target.value), style: { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "12.5px", border: "1px solid #C9CDD3", borderRadius: "5px", padding: "3px 4px", color: "#1B2A4A", flex: 1, minWidth: 0 } }),
+        React.createElement("span", { style: { color: "#8A93A0", fontSize: "12px" } }, "t/m"),
+        React.createElement("input", { type: "date", value: vacEnd, onChange: e => setVacEnd(e.target.value), style: { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "12.5px", border: "1px solid #C9CDD3", borderRadius: "5px", padding: "3px 4px", color: "#1B2A4A", flex: 1, minWidth: 0 } })
+      ),
+      React.createElement("button", { className: "rr-vac-add-btn", onClick: addVacation, style: { width: "100%", border: "1px solid #1B2A4A", background: "#1B2A4A", color: "#FFFFFF", borderRadius: "5px", padding: "6px 9px", fontSize: "12.5px", fontWeight: 600, cursor: "pointer", marginTop: "2px" } }, "Toevoegen")
+    ),
+    sortedVacationDriverNames.length > 0 && React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "10px" } },
+      sortedVacationDriverNames.map(name => React.createElement("div", { key: name },
+        React.createElement("div", { style: { fontSize: "12px", fontWeight: 600, color: "#5A6472", marginBottom: "4px" } }, name),
+        React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "4px" } },
+          vacationsByDriver[name].map(v => {
+            const isSameDay = v.start_date === v.end_date;
+            const label = isSameDay
+              ? formatDayDateWithYear(new Date(v.start_date))
+              : `${formatDayDateWithYear(new Date(v.start_date))} – ${formatDayDateWithYear(new Date(v.end_date))}`;
+            return React.createElement("div", { key: v.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", background: "#FBEDE0", border: "1px solid #E8A33D", borderRadius: "6px", padding: "4px 8px", fontSize: "12px", color: "#7A3B10" } },
+              React.createElement("span", null, label),
+              React.createElement("span", { onClick: () => { if (window.confirm(`Vakantie van ${name} verwijderen?`)) removeVacation(v.id); }, title: "Verwijderen", style: { cursor: "pointer", color: "#A9433F", flexShrink: 0 } }, "×")
+            );
+          })
+        )
+      ))
+    )
+  );
+}
+
+// team is "is_driver" of "is_warehouse"; iemand die uit zijn laatste team wordt gehaald, wordt helemaal verwijderd
+function PeopleBar({ team, label, otherLabel, driversRaw, setDriversRaw, setVacations, onPersonClick }) {
+  const [newName, setNewName] = useState("");
+  const otherTeam = team === "is_driver" ? "is_warehouse" : "is_driver";
+  const members = driversRaw.filter(d => d[team]);
+  const linkable = driversRaw.filter(d => !d[team] && d[otherTeam]).sort((a, b) => a.name.localeCompare(b.name));
+
+  const setMembership = async (person, value) => {
+    const res = await fetch(`/api/drivers/${person.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [team]: value })
+    });
+    const updated = await res.json();
+    setDriversRaw(prev => prev.map(d => d.id === updated.id ? updated : d));
+  };
+
+  const addPerson = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    const existing = driversRaw.find(d => d.name === name);
+    if (existing) {
+      if (!existing[team]) await setMembership(existing, 1);
+      setNewName("");
+      return;
+    }
+    const res = await fetch("/api/drivers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, is_driver: team === "is_driver" ? 1 : 0, is_warehouse: team === "is_warehouse" ? 1 : 0 })
+    });
+    const created = await res.json();
+    setDriversRaw(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+    setNewName("");
+  };
+
+  const removeFromTeam = async person => {
+    if (person[otherTeam]) {
+      await setMembership(person, 0);
+      return;
+    }
+    await fetch(`/api/drivers/${person.id}`, { method: "DELETE" });
+    setDriversRaw(prev => prev.filter(d => d.id !== person.id));
+    setVacations(prev => prev.filter(v => v.driver_name !== person.name));
+  };
+
+  return React.createElement("div", { className: "no-print", style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px 14px", marginTop: "16px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" } },
+    React.createElement("span", { style: { fontSize: "12.5px", color: "#5A6472", flexShrink: 0 } }, label),
+    members.map(person => React.createElement("span", { key: person.id, className: "rr-driver-chip", title: person[otherTeam] ? `Werkt ook in ${otherLabel}` : undefined, style: { display: "inline-flex", alignItems: "center", gap: "6px", background: "#F3F8F3", border: "1px solid #DCE5DC", borderRadius: "14px", padding: "3px 10px", fontSize: "13px" } },
+      onPersonClick
+        ? React.createElement("span", { className: "rr-person-name", onClick: () => onPersonClick(person), title: "Standaardrooster instellen", style: { cursor: "pointer" } }, person.name)
+        : person.name,
+      person[otherTeam] ? React.createElement("span", { style: { fontSize: "10.5px", color: "#8A93A0" } }, `+ ${otherLabel}`) : null,
+      React.createElement("span", { className: "rr-driver-x", onClick: () => removeFromTeam(person), title: person[otherTeam] ? `${person.name} uit dit team halen (blijft in ${otherLabel})` : `${person.name} verwijderen`, style: { color: "#A9433F", fontSize: "12px" } }, "×")
+    )),
+    React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: "4px", marginLeft: "4px" } },
+      React.createElement("input", { className: "rr-input", style: { width: "110px", borderBottom: "1px solid #C9CDD3", padding: "3px 2px" }, value: newName, placeholder: "nieuwe naam", onChange: e => setNewName(e.target.value), onKeyDown: e => e.key === "Enter" && addPerson() }),
+      React.createElement("button", { onClick: addPerson, style: { border: "1px solid #C9CDD3", background: "transparent", borderRadius: "5px", padding: "3px 9px", fontSize: "12.5px", color: "#1B2A4A", cursor: "pointer" } }, "+ toevoegen")
+    ),
+    linkable.length > 0 && React.createElement("select", {
+      value: "",
+      onChange: e => { const person = linkable.find(d => String(d.id) === e.target.value); if (person) setMembership(person, 1); },
+      style: { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "12.5px", border: "1px solid #C9CDD3", borderRadius: "5px", padding: "3px 6px", background: "#FFFFFF", color: "#1B2A4A" }
+    },
+      React.createElement("option", { value: "" }, `+ iemand uit ${otherLabel} toevoegen`),
+      linkable.map(d => React.createElement("option", { key: d.id, value: d.id }, d.name))
+    )
+  );
+}
+
+// Rechtsklikmenu op een roostercel om iemand die dag (niet) beschikbaar te maken
+function UnavailableMenu({ menu, onClose, driverIdByName, vacations, setVacations }) {
+  if (!menu) return null;
+
+  const toggleUnavailable = async (driverName, isoDate) => {
+    const existing = vacations.find(v => v.driver_name === driverName && v.type === "unavailable" && v.start_date === isoDate && v.end_date === isoDate);
+    if (existing) {
+      await fetch(`/api/vacations/${existing.id}`, { method: "DELETE" });
+      setVacations(prev => prev.filter(v => v.id !== existing.id));
+      return;
+    }
+    const driver_id = driverIdByName[driverName];
+    const res = await fetch("/api/vacations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ driver_id, start_date: isoDate, end_date: isoDate, type: "unavailable" })
+    });
+    const created = await res.json();
+    setVacations(prev => [...prev, { ...created, driver_name: driverName }]);
+  };
+
+  return React.createElement("div", { className: "no-print", onClick: onClose, onContextMenu: e => { e.preventDefault(); onClose(); }, style: { position: "fixed", inset: 0, zIndex: 100 } },
+    React.createElement("div", { onClick: e => e.stopPropagation(), style: { position: "fixed", top: menu.y, left: menu.x, background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "6px", boxShadow: "0 4px 12px rgba(0,0,0,0.15)", padding: "4px", zIndex: 101, minWidth: "170px" } },
+      React.createElement("div", {
+        onClick: () => { toggleUnavailable(menu.driverName, menu.isoDate); onClose(); },
+        onMouseEnter: e => { e.currentTarget.style.background = "#F3F8F3"; },
+        onMouseLeave: e => { e.currentTarget.style.background = "transparent"; },
+        style: { padding: "6px 10px", fontSize: "13px", color: "#1B2A4A", cursor: "pointer", borderRadius: "4px" }
+      }, menu.isUnavailable ? "Weer beschikbaar maken" : "Niet beschikbaar")
+    )
+  );
+}
+
+function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, vacations, setVacations }) {
+  const [rawRoutes, setRawRoutes] = useState([]);
+  const [warehouseShifts, setWarehouseShifts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [contextMenu, setContextMenu] = useState(null);
 
-  const drivers = driversRaw.map(d => d.name);
+  const drivers = driversRaw.filter(d => d.is_driver).map(d => d.name);
   const driverIdByName = Object.fromEntries(driversRaw.map(d => [d.name, d.id]));
   const currentMonday = addWeeks(getMondayOfThisWeek(), weekOffset);
   const currentKey = weekKey(currentMonday);
@@ -126,14 +305,6 @@ function RouteRooster() {
   const currentFriday = new Date(currentMonday);
   currentFriday.setDate(currentMonday.getDate() + 4);
   const weekLabel = `${formatDayDate(currentMonday)} – ${formatDayDate(currentFriday)}`;
-
-  useEffect(() => {
-    fetch("/api/drivers").then(r => r.json()).then(setDriversRaw);
-    fetch("/api/vacations").then(r => r.json()).then(setVacations);
-  }, []);
-  useEffect(() => {
-    if (!vacDriver && drivers.length > 0) setVacDriver(drivers[0]);
-  }, [driversRaw]);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,70 +329,12 @@ function RouteRooster() {
       if (!cancelled) { setRawRoutes(routesWithFixed); setLoading(false); }
     }
     loadWeek();
+    fetch(`/api/warehouse-shifts?week_key=${currentKey}`).then(r => r.json()).then(rows => { if (!cancelled) setWarehouseShifts(rows); });
     return () => { cancelled = true; };
   }, [currentKey]);
 
-  const isDriverOnVacation = (driverName, isoDate) =>
-    vacations.some(v => v.driver_name === driverName && v.type !== "unavailable" && isoDate >= v.start_date && isoDate <= v.end_date);
-
-  const isDriverUnavailable = (driverName, isoDate) =>
-    vacations.some(v => v.driver_name === driverName && v.type === "unavailable" && isoDate >= v.start_date && isoDate <= v.end_date);
-
-  const addVacation = async () => {
-    if (!vacDriver || !vacStart || !vacEnd || vacStart > vacEnd) return;
-    const driver_id = driverIdByName[vacDriver];
-    const res = await fetch("/api/vacations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ driver_id, start_date: vacStart, end_date: vacEnd, type: "vacation" })
-    });
-    const created = await res.json();
-    setVacations(prev => [...prev, { ...created, driver_name: vacDriver }]);
-    setVacStart(""); setVacEnd("");
-  };
-
-  const toggleUnavailable = async (driverName, isoDate) => {
-    const existing = vacations.find(v => v.driver_name === driverName && v.type === "unavailable" && v.start_date === isoDate && v.end_date === isoDate);
-    if (existing) {
-      await removeVacation(existing.id);
-      return;
-    }
-    const driver_id = driverIdByName[driverName];
-    const res = await fetch("/api/vacations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ driver_id, start_date: isoDate, end_date: isoDate, type: "unavailable" })
-    });
-    const created = await res.json();
-    setVacations(prev => [...prev, { ...created, driver_name: driverName }]);
-  };
-
-  const removeVacation = async id => {
-    await fetch(`/api/vacations/${id}`, { method: "DELETE" });
-    setVacations(prev => prev.filter(v => v.id !== id));
-  };
-
-  const addDriver = async () => {
-    const name = newDriver.trim();
-    if (!name || drivers.includes(name)) return;
-    const res = await fetch("/api/drivers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name })
-    });
-    const created = await res.json();
-    setDriversRaw(prev => [...prev, created]);
-    setNewDriver("");
-  };
-
-  const removeDriver = async name => {
-    const id = driverIdByName[name];
-    if (id === undefined) return;
-    await fetch(`/api/drivers/${id}`, { method: "DELETE" });
-    setDriversRaw(prev => prev.filter(d => d.name !== name));
-    setVacations(prev => prev.filter(v => v.driver_name !== name));
-    setRawRoutes(prev => prev.map(r => r.driver_name === name ? { ...r, driver_id: null, driver_name: null } : r));
-  };
+  const isDriverOnVacation = (driverName, isoDate) => isOnVacation(vacations, driverName, isoDate);
+  const isDriverUnavailable = (driverName, isoDate) => isUnavailable(vacations, driverName, isoDate);
 
   const addRoute = async dayIndex => {
     const res = await fetch("/api/routes", {
@@ -249,7 +362,8 @@ function RouteRooster() {
   };
 
   const totalRoutes = days.reduce((sum, d) => sum + d.routes.length, 0);
-  const openRoutes = days.reduce((sum, d) => sum + d.routes.filter(r => !r.driver.trim()).length, 0);
+  const isDriverInTeam = name => drivers.includes(name);
+  const openRoutes = days.reduce((sum, d) => sum + d.routes.filter(r => !isDriverInTeam(r.driver)).length, 0);
 
   const driverDayRoutes = {};
   drivers.forEach(name => {
@@ -265,18 +379,13 @@ function RouteRooster() {
   });
   const unassignedByDay = {};
   days.forEach(day => {
-    unassignedByDay[day.dayIndex] = day.routes.filter(r => !r.driver.trim());
+    unassignedByDay[day.dayIndex] = day.routes.filter(r => !isDriverInTeam(r.driver));
   });
 
-  const vacationsByDriver = {};
-  vacations.filter(v => v.type !== "unavailable").forEach(v => {
-    if (!vacationsByDriver[v.driver_name]) vacationsByDriver[v.driver_name] = [];
-    vacationsByDriver[v.driver_name].push(v);
-  });
-  const sortedVacationDriverNames = Object.keys(vacationsByDriver).sort((a, b) => a.localeCompare(b));
-  sortedVacationDriverNames.forEach(name => {
-    vacationsByDriver[name].sort((a, b) => a.start_date.localeCompare(b.start_date));
-  });
+  const isInWarehouse = (name, dayIndex) => {
+    const id = driverIdByName[name];
+    return driversRaw.some(d => d.id === id && d.is_warehouse) && warehouseShifts.some(w => w.driver_id === id && w.day_index === dayIndex);
+  };
 
   const handleDropOnCell = (e, dayIndex, targetDriverName) => {
     e.preventDefault();
@@ -345,6 +454,7 @@ function RouteRooster() {
             },
         onVac && React.createElement("div", { style: { fontSize: "12.5px", color: "#4B2E7A", fontWeight: 600, textAlign: "center", padding: "8px 0" } }, "Vakantie/vrij"),
         onUnavail && React.createElement("div", { style: { fontSize: "12.5px", color: "#B0524E", fontWeight: 600, textAlign: "center", padding: "8px 0" } }, "Niet beschikbaar"),
+        !blocked && isInWarehouse(name, day.dayIndex) && React.createElement(CrossLabel, { warn: assigned.length > 0 }, "magazijn"),
         assigned.map(route => renderRouteChip(route, day, name))
       ));
     });
@@ -400,37 +510,7 @@ function RouteRooster() {
     React.createElement("div", { style: { display: "flex", gap: "16px", alignItems: "flex-start", flexWrap: "wrap" } },
       React.createElement("div", { className: "rr-driver-grid", style: { display: "grid", gridTemplateColumns: "80px repeat(5, 200px)", gap: "5px", background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px" } }, gridChildren),
       React.createElement("div", { className: "no-print", style: { display: "flex", flexDirection: "column", gap: "12px", width: "300px", flexShrink: 0 } },
-  React.createElement("div", { style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px 14px" } },
-    React.createElement("div", { style: { fontSize: "13px", fontWeight: 600, color: "#5A6472", marginBottom: "8px" } }, "Vakantie/vrij"),
-    React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "6px", marginBottom: "10px" } },
-      React.createElement("select", { value: vacDriver, onChange: e => setVacDriver(e.target.value), style: { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "13px", border: "1px solid #C9CDD3", borderRadius: "5px", padding: "4px 6px", background: "#FFFFFF", color: "#1B2A4A" } },
-        drivers.map(name => React.createElement("option", { key: name, value: name }, name))
-      ),
-      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
-        React.createElement("input", { type: "date", value: vacStart, onChange: e => setVacStart(e.target.value), style: { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "12.5px", border: "1px solid #C9CDD3", borderRadius: "5px", padding: "3px 4px", color: "#1B2A4A", flex: 1, minWidth: 0 } }),
-        React.createElement("span", { style: { color: "#8A93A0", fontSize: "12px" } }, "t/m"),
-        React.createElement("input", { type: "date", value: vacEnd, onChange: e => setVacEnd(e.target.value), style: { fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "12.5px", border: "1px solid #C9CDD3", borderRadius: "5px", padding: "3px 4px", color: "#1B2A4A", flex: 1, minWidth: 0 } })
-      ),
-      React.createElement("button", { className: "rr-vac-add-btn", onClick: addVacation, style: { width: "100%", border: "1px solid #1B2A4A", background: "#1B2A4A", color: "#FFFFFF", borderRadius: "5px", padding: "6px 9px", fontSize: "12.5px", fontWeight: 600, cursor: "pointer", marginTop: "2px" } }, "Toevoegen")
-    ),
-        sortedVacationDriverNames.length > 0 && React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "10px" } },
-          sortedVacationDriverNames.map(name => React.createElement("div", { key: name },
-            React.createElement("div", { style: { fontSize: "12px", fontWeight: 600, color: "#5A6472", marginBottom: "4px" } }, name),
-            React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "4px" } },
-              vacationsByDriver[name].map(v => {
-                const isSameDay = v.start_date === v.end_date;
-                const label = isSameDay
-                  ? formatDayDateWithYear(new Date(v.start_date))
-                  : `${formatDayDateWithYear(new Date(v.start_date))} – ${formatDayDateWithYear(new Date(v.end_date))}`;
-                return React.createElement("div", { key: v.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", background: "#FBEDE0", border: "1px solid #E8A33D", borderRadius: "6px", padding: "4px 8px", fontSize: "12px", color: "#7A3B10" } },
-                  React.createElement("span", null, label),
-                  React.createElement("span", { onClick: () => { if (window.confirm(`Vakantie van ${name} verwijderen?`)) removeVacation(v.id); }, title: "Verwijderen", style: { cursor: "pointer", color: "#A9433F", flexShrink: 0 } }, "×")
-                );
-              })
-            )
-          ))
-        )
-  ),
+  React.createElement(VacationPanel, { teamNames: drivers, driverIdByName, vacations, setVacations }),
   React.createElement("div", { style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px 14px" } },
     React.createElement("div", { style: { fontSize: "13px", fontWeight: 600, color: "#5A6472", marginBottom: "8px" } }, "Ingepland deze week"),
     React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "4px" } },
@@ -445,33 +525,347 @@ function RouteRooster() {
   )
 )
     ),
-    React.createElement("div", { className: "no-print", style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px 14px", marginTop: "16px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" } },
-      React.createElement("span", { style: { fontSize: "12.5px", color: "#5A6472", flexShrink: 0 } }, "Chauffeurs:"),
-      drivers.map(name => React.createElement("span", { key: name, className: "rr-driver-chip", style: { display: "inline-flex", alignItems: "center", gap: "6px", background: "#F3F8F3", border: "1px solid #DCE5DC", borderRadius: "14px", padding: "3px 10px", fontSize: "13px" } },
-        name,
-        React.createElement("span", { className: "rr-driver-x", onClick: () => removeDriver(name), title: `${name} verwijderen`, style: { color: "#A9433F", fontSize: "12px" } }, "×")
-      )),
-      React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: "4px", marginLeft: "4px" } },
-        React.createElement("input", { className: "rr-input", style: { width: "110px", borderBottom: "1px solid #C9CDD3", padding: "3px 2px" }, value: newDriver, placeholder: "nieuwe naam", onChange: e => setNewDriver(e.target.value), onKeyDown: e => e.key === "Enter" && addDriver() }),
-        React.createElement("button", { onClick: addDriver, style: { border: "1px solid #C9CDD3", background: "transparent", borderRadius: "5px", padding: "3px 9px", fontSize: "12.5px", color: "#1B2A4A", cursor: "pointer" } }, "+ toevoegen")
-      )
-    ),
+    React.createElement(PeopleBar, { team: "is_driver", label: "Chauffeurs:", otherLabel: "magazijn", driversRaw, setDriversRaw, setVacations }),
     loading && React.createElement("p", { className: "no-print", style: { fontSize: "12px", color: "#8A93A0", marginTop: "8px" } }, "Rooster laden…"),
     React.createElement("p", { className: "no-print", style: { marginTop: "22px", fontSize: "12px", color: "#8A93A0", maxWidth: "520px" } }, "Alles wordt automatisch opgeslagen op de server, ook na een refresh of tussen sessies."),
-    contextMenu && React.createElement("div", { className: "no-print", onClick: () => setContextMenu(null), onContextMenu: e => { e.preventDefault(); setContextMenu(null); }, style: { position: "fixed", inset: 0, zIndex: 100 } },
-      React.createElement("div", { onClick: e => e.stopPropagation(), style: { position: "fixed", top: contextMenu.y, left: contextMenu.x, background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "6px", boxShadow: "0 4px 12px rgba(0,0,0,0.15)", padding: "4px", zIndex: 101, minWidth: "170px" } },
-        React.createElement("div", {
-          onClick: () => { toggleUnavailable(contextMenu.driverName, contextMenu.isoDate); setContextMenu(null); },
-          onMouseEnter: e => { e.currentTarget.style.background = "#F3F8F3"; },
-          onMouseLeave: e => { e.currentTarget.style.background = "transparent"; },
-          style: { padding: "6px 10px", fontSize: "13px", color: "#1B2A4A", cursor: "pointer", borderRadius: "4px" }
-        }, contextMenu.isUnavailable ? "Weer beschikbaar maken" : "Niet beschikbaar")
+    React.createElement(UnavailableMenu, { menu: contextMenu, onClose: () => setContextMenu(null), driverIdByName, vacations, setVacations })
+  );
+}
+
+const DEFAULT_SHIFT = { start_time: "07:00", end_time: "16:30" };
+const inputStyle = { fontFamily: "'IBM Plex Mono', monospace", fontSize: "12.5px", border: "1px solid #C9CDD3", borderRadius: "5px", padding: "3px 4px", color: "#1B2A4A" };
+const isValidTimes = (start, end) => !!start && !!end && start < end;
+function shiftMinutes(shift) {
+  if (!shift || !shift.start_time || !shift.end_time) return 0;
+  const toMin = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+  return toMin(shift.end_time) - toMin(shift.start_time);
+}
+function formatHours(minutes) {
+  return (Math.round(minutes / 60 * 100) / 100).toLocaleString("nl-NL");
+}
+
+// Venstertje om de tijden van één dienst aan te passen
+function ShiftEditor({ editor, onSave, onRemove, onClose }) {
+  const [start, setStart] = useState(editor.shift.start_time || DEFAULT_SHIFT.start_time);
+  const [end, setEnd] = useState(editor.shift.end_time || DEFAULT_SHIFT.end_time);
+  const valid = isValidTimes(start, end);
+  return React.createElement("div", { className: "no-print", onClick: onClose, style: { position: "fixed", inset: 0, zIndex: 100 } },
+    React.createElement("div", { onClick: e => e.stopPropagation(), style: { position: "fixed", top: Math.min(editor.y, window.innerHeight - 150), left: Math.min(editor.x, window.innerWidth - 230), background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "6px", boxShadow: "0 4px 12px rgba(0,0,0,0.15)", padding: "10px 12px", zIndex: 101, width: "200px", display: "flex", flexDirection: "column", gap: "8px" } },
+      React.createElement("div", { style: { fontSize: "12.5px", fontWeight: 600, color: "#5A6472" } }, `${editor.person.name} · ${editor.day.name}`),
+      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
+        React.createElement("input", { type: "time", value: start, onChange: e => setStart(e.target.value), style: { ...inputStyle, flex: 1, minWidth: 0 } }),
+        React.createElement("span", { style: { color: "#8A93A0", fontSize: "12px" } }, "–"),
+        React.createElement("input", { type: "time", value: end, onChange: e => setEnd(e.target.value), style: { ...inputStyle, flex: 1, minWidth: 0, borderColor: valid ? "#C9CDD3" : "#C0433D" } })
+      ),
+      React.createElement("div", { style: { display: "flex", gap: "6px" } },
+        React.createElement("button", { disabled: !valid, onClick: () => onSave(start, end), style: { flex: 1, border: "1px solid #1B2A4A", background: "#1B2A4A", color: "#FFFFFF", borderRadius: "5px", padding: "5px 0", fontSize: "12.5px", fontWeight: 600, cursor: valid ? "pointer" : "not-allowed", opacity: valid ? 1 : 0.5 } }, "Opslaan"),
+        React.createElement("button", { onClick: onRemove, style: { flex: 1, border: "1px solid #E3B5B2", background: "#FFFFFF", color: "#A9433F", borderRadius: "5px", padding: "5px 0", fontSize: "12.5px", cursor: "pointer" } }, "Werkt niet")
       )
     )
   );
 }
 
-    ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(RouteRooster));
+// Venster om het vaste weekrooster van één persoon in te stellen
+function TemplateModal({ person, templates, weekLabel, onSave, onClose }) {
+  const [rows, setRows] = useState(() => DAY_NAMES.map((_, i) => {
+    const t = templates.find(t => t.driver_id === person.id && t.day_index === i);
+    return { enabled: !!t, start_time: t ? t.start_time : DEFAULT_SHIFT.start_time, end_time: t ? t.end_time : DEFAULT_SHIFT.end_time };
+  }));
+  const update = (i, field, value) => setRows(prev => prev.map((r, j) => j === i ? { ...r, [field]: value } : r));
+  const valid = rows.every(r => !r.enabled || isValidTimes(r.start_time, r.end_time));
+  const totalMinutes = rows.reduce((sum, r) => sum + (r.enabled ? shiftMinutes(r) : 0), 0);
+  const save = applyToWeek => onSave(rows.map((r, i) => ({ day_index: i, start_time: r.start_time, end_time: r.end_time })).filter((_, i) => rows[i].enabled), applyToWeek);
+
+  return React.createElement("div", { className: "no-print", onClick: onClose, style: { position: "fixed", inset: 0, zIndex: 100, background: "rgba(27,42,74,0.25)", display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" } },
+    React.createElement("div", { onClick: e => e.stopPropagation(), style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", boxShadow: "0 8px 24px rgba(0,0,0,0.18)", padding: "16px 18px", width: "340px", maxWidth: "100%", fontFamily: "'IBM Plex Sans', system-ui, sans-serif", color: "#1B2A4A" } },
+      React.createElement("div", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "16px", fontWeight: 700 } }, `Standaardrooster ${person.name}`),
+      React.createElement("div", { style: { fontSize: "12px", color: "#5A6472", margin: "4px 0 12px" } }, "Wordt ingevuld in nieuwe weken. Weken die al gevuld zijn veranderen niet."),
+      rows.map((r, i) => React.createElement("div", { key: i, style: { display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" } },
+        React.createElement("label", { style: { display: "flex", alignItems: "center", gap: "6px", width: "105px", fontSize: "13px", cursor: "pointer" } },
+          React.createElement("input", { type: "checkbox", checked: r.enabled, onChange: e => update(i, "enabled", e.target.checked) }),
+          DAY_NAMES[i]
+        ),
+        React.createElement("input", { type: "time", disabled: !r.enabled, value: r.start_time, onChange: e => update(i, "start_time", e.target.value), style: { ...inputStyle, flex: 1, minWidth: 0, opacity: r.enabled ? 1 : 0.4 } }),
+        React.createElement("span", { style: { color: "#8A93A0", fontSize: "12px" } }, "–"),
+        React.createElement("input", { type: "time", disabled: !r.enabled, value: r.end_time, onChange: e => update(i, "end_time", e.target.value), style: { ...inputStyle, flex: 1, minWidth: 0, opacity: r.enabled ? 1 : 0.4, borderColor: !r.enabled || isValidTimes(r.start_time, r.end_time) ? "#C9CDD3" : "#C0433D" } })
+      )),
+      React.createElement("div", { style: { fontSize: "12.5px", color: "#5A6472", margin: "10px 0 12px" } }, "Totaal per week: ", React.createElement("span", { style: { fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600, color: "#1B2A4A" } }, `${formatHours(totalMinutes)} uur`)),
+      React.createElement("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end", flexWrap: "wrap" } },
+        React.createElement("button", { onClick: onClose, style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "5px", padding: "6px 12px", fontSize: "12.5px", color: "#1B2A4A", cursor: "pointer" } }, "Annuleren"),
+        React.createElement("button", { disabled: !valid, onClick: () => save(false), style: { border: "1px solid #1B2A4A", background: "#1B2A4A", color: "#FFFFFF", borderRadius: "5px", padding: "6px 14px", fontSize: "12.5px", fontWeight: 600, cursor: valid ? "pointer" : "not-allowed", opacity: valid ? 1 : 0.5 } }, "Opslaan")
+      ),
+      React.createElement("button", { disabled: !valid, onClick: () => save(true), title: `Vervangt de diensten van ${person.name} in de week van ${weekLabel} door dit standaardrooster`, style: { width: "100%", marginTop: "8px", border: "1px solid #1B2A4A", background: "#FFFFFF", color: "#1B2A4A", borderRadius: "5px", padding: "6px 0", fontSize: "12.5px", fontWeight: 600, cursor: valid ? "pointer" : "not-allowed", opacity: valid ? 1 : 0.5 } }, `Opslaan en toepassen op deze week (${weekLabel})`)
+    )
+  );
+}
+
+function WarehouseRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, vacations, setVacations }) {
+  const [shifts, setShifts] = useState(new Map());
+  const [templates, setTemplates] = useState([]);
+  const [routes, setRoutes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [contextMenu, setContextMenu] = useState(null);
+  const [editor, setEditor] = useState(null);
+  const [templatePerson, setTemplatePerson] = useState(null);
+
+  const people = driversRaw.filter(d => d.is_warehouse);
+  const driverIdByName = Object.fromEntries(driversRaw.map(d => [d.name, d.id]));
+  const currentMonday = addWeeks(getMondayOfThisWeek(), weekOffset);
+  const currentKey = weekKey(currentMonday);
+  const days = groupRoutesByDay(currentMonday, []);
+  const currentFriday = new Date(currentMonday);
+  currentFriday.setDate(currentMonday.getDate() + 4);
+  const weekLabel = `${formatDayDate(currentMonday)} – ${formatDayDate(currentFriday)}`;
+  const shiftKey = (dayIndex, driverId) => `${dayIndex}-${driverId}`;
+
+  const loadShifts = async () => {
+    const res = await fetch(`/api/warehouse-shifts?week_key=${currentKey}`);
+    const rows = await res.json();
+    return new Map(rows.map(r => [shiftKey(r.day_index, r.driver_id), { start_time: r.start_time, end_time: r.end_time }]));
+  };
+
+  useEffect(() => {
+    fetch("/api/warehouse-templates").then(r => r.json()).then(setTemplates);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadWeek() {
+      setLoading(true);
+      // Deze en toekomstige weken krijgen bij de eerste keer openen het standaardrooster
+      if (currentKey >= weekKey(getMondayOfThisWeek())) {
+        await fetch("/api/warehouse-shifts/apply-template", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ week_key: currentKey, only_if_new: true })
+        });
+      }
+      const loaded = await loadShifts();
+      if (!cancelled) { setShifts(loaded); setLoading(false); }
+    }
+    loadWeek();
+    fetch(`/api/routes?week_key=${currentKey}`).then(r => r.json()).then(rows => { if (!cancelled) setRoutes(rows); });
+    return () => { cancelled = true; };
+  }, [currentKey]);
+
+  // Routes die iemand uit het magazijnteam die dag als chauffeur rijdt
+  const routeCodesFor = (person, dayIndex) => person.is_driver
+    ? routes.filter(r => r.driver_id === person.id && r.day_index === dayIndex).map(r => r.code || "route")
+    : [];
+
+  const isBlocked = (name, isoDate) => isOnVacation(vacations, name, isoDate) || isUnavailable(vacations, name, isoDate);
+  const shiftFor = (person, day) => isBlocked(person.name, day.isoDate) ? null : shifts.get(shiftKey(day.dayIndex, person.id)) || null;
+  const isWorking = (person, day) => !!shiftFor(person, day);
+
+  const saveShift = async (person, day, start_time, end_time) => {
+    const key = shiftKey(day.dayIndex, person.id);
+    setShifts(prev => new Map(prev).set(key, { start_time, end_time }));
+    await fetch("/api/warehouse-shifts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ week_key: currentKey, day_index: day.dayIndex, driver_id: person.id, start_time, end_time })
+    });
+  };
+
+  const removeShift = async (person, day) => {
+    const key = shiftKey(day.dayIndex, person.id);
+    setShifts(prev => { const next = new Map(prev); next.delete(key); return next; });
+    await fetch("/api/warehouse-shifts", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ week_key: currentKey, day_index: day.dayIndex, driver_id: person.id })
+    });
+  };
+
+  // Lege cel: meteen inplannen met de standaardtijden van die persoon. Ingevulde cel: tijden aanpassen.
+  const handleCellClick = (e, person, day) => {
+    if (isBlocked(person.name, day.isoDate)) return;
+    const shift = shiftFor(person, day);
+    if (shift) {
+      setEditor({ x: e.clientX, y: e.clientY, person, day, shift });
+      return;
+    }
+    const t = templates.find(t => t.driver_id === person.id && t.day_index === day.dayIndex) || DEFAULT_SHIFT;
+    saveShift(person, day, t.start_time, t.end_time);
+  };
+
+  const applyTemplate = async () => {
+    await fetch("/api/warehouse-shifts/apply-template", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ week_key: currentKey, only_if_new: false })
+    });
+    setShifts(await loadShifts());
+  };
+
+  const saveTemplate = async (person, days, applyToWeek) => {
+    const res = await fetch(`/api/warehouse-templates/${person.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ days })
+    });
+    const saved = await res.json();
+    setTemplates(prev => [...prev.filter(t => t.driver_id !== person.id), ...saved]);
+    if (applyToWeek) {
+      await fetch(`/api/warehouse-shifts/apply-template/${person.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ week_key: currentKey })
+      });
+      setShifts(await loadShifts());
+    }
+    setTemplatePerson(null);
+  };
+
+  const workingPerDay = days.map(day => people.filter(p => isWorking(p, day)).length);
+  const totalShifts = workingPerDay.reduce((a, b) => a + b, 0);
+  const minutesPerPerson = Object.fromEntries(people.map(p => [p.id, days.reduce((sum, day) => sum + shiftMinutes(shiftFor(p, day)), 0)]));
+  const totalMinutes = Object.values(minutesPerPerson).reduce((a, b) => a + b, 0);
+
+  const gridChildren = [];
+  gridChildren.push(React.createElement("div", { key: "hdr-empty" }, ""));
+  days.forEach(day => gridChildren.push(
+    React.createElement("div", { key: `hdr-${day.id}`, style: { fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: "12.5px", padding: "4px 2px" } }, day.name, " ", React.createElement("span", { style: { fontSize: "10.5px", color: "#8A93A0", fontWeight: 400, fontFamily: "'IBM Plex Mono', monospace" } }, day.date))
+  ));
+
+  people.forEach(person => {
+    gridChildren.push(React.createElement("div", { key: `p-${person.id}`, className: "rr-person-name", onClick: () => setTemplatePerson(person), title: "Standaardrooster instellen", style: { fontSize: "12.5px", fontWeight: 600, alignSelf: "center", cursor: "pointer" } }, person.name));
+    days.forEach(day => {
+      const onVac = isOnVacation(vacations, person.name, day.isoDate);
+      const onUnavail = isUnavailable(vacations, person.name, day.isoDate);
+      const shift = shiftFor(person, day);
+      const working = !!shift;
+      const routeCodes = onVac || onUnavail ? [] : routeCodesFor(person, day.dayIndex);
+      const background = onVac ? "#F1EAFB" : onUnavail ? "#FBEEED" : working ? "#DDEFE0" : "#FFFFFF";
+      const border = onVac ? "#C9B6E8" : onUnavail ? "#E3B5B2" : working ? "#7DB587" : "#E3E6E9";
+      gridChildren.push(React.createElement("div", {
+        key: `cell-${person.id}-${day.id}`,
+        className: "rr-shift-cell" + (onVac || onUnavail ? "" : " rr-shift-toggle"),
+        onClick: e => handleCellClick(e, person, day),
+        onContextMenu: e => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, driverName: person.name, isoDate: day.isoDate, isUnavailable: onUnavail }); },
+        title: onVac || onUnavail ? undefined : working ? "Klik om tijden aan te passen" : "Klik om in te plannen",
+        style: { background, border: `1px solid ${border}`, borderRadius: "6px", padding: "8px 4px", minHeight: "18px", textAlign: "center", fontSize: "12.5px", fontWeight: 600, cursor: onVac || onUnavail ? "not-allowed" : "pointer", userSelect: "none" }
+      },
+        routeCodes.length > 0 && React.createElement(CrossLabel, { warn: working }, `rijdt: ${routeCodes.join(", ")}`),
+        onVac ? React.createElement("span", { style: { color: "#4B2E7A" } }, "Vakantie/vrij")
+          : onUnavail ? React.createElement("span", { style: { color: "#B0524E" } }, "Niet beschikbaar")
+          : working ? React.createElement("span", { style: { color: "#2F6B3A", fontFamily: "'IBM Plex Mono', monospace" } }, shift.start_time ? `${shift.start_time}–${shift.end_time}` : "Werkt")
+          : ""
+      ));
+    });
+  });
+
+  gridChildren.push(React.createElement("div", { key: "divider-total", style: { gridColumn: "1 / -1", height: "1px", background: "#C9CDD3", margin: "4px 0" } }));
+  gridChildren.push(React.createElement("div", { key: "total-label", style: { fontSize: "12px", fontWeight: 600, color: "#5A6472" } }, "Aantal"));
+  days.forEach((day, i) => gridChildren.push(
+    React.createElement("div", { key: `total-${day.id}`, style: { fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", fontWeight: 600, textAlign: "center" } }, workingPerDay[i])
+  ));
+
+  return React.createElement("div", { className: "rr-print-root", style: { minHeight: "100%", background: "#EDF0F2", fontFamily: "'IBM Plex Sans', system-ui, sans-serif", color: "#1B2A4A", padding: "28px 20px 60px" } },
+    React.createElement("style", null, `
+      @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&family=Space+Grotesk:wght@500;600;700&display=swap');
+      .rr-shift-toggle:hover { filter: brightness(0.96); }
+      .rr-person-name:hover { text-decoration: underline; }
+      .rr-input { font-family: 'IBM Plex Sans', sans-serif; font-size: 13.5px; border: none; background: transparent; outline: none; width: 100%; color: #1B2A4A; }
+      .rr-driver-chip:hover .rr-driver-x { opacity: 1; }
+      .rr-driver-x { opacity: 0; transition: opacity 0.12s ease; cursor: pointer; }
+      .rr-vac-add-btn:hover { background: #14203a; border-color: #14203a; }
+      @media print {
+        .no-print { display: none !important; }
+        body { background: #fff !important; }
+        html, body, #root { min-height: auto !important; }
+        .rr-print-root { background: #fff !important; padding: 6px !important; min-height: auto !important; }
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        .rr-warehouse-grid { grid-template-columns: 90px repeat(5, 1fr) !important; gap: 3px !important; padding: 6px !important; border: none !important; }
+        .rr-shift-cell { padding: 3px 4px !important; font-size: 10px !important; break-inside: avoid; }
+        h1 { font-size: 18px !important; margin-bottom: 2px !important; }
+        p { font-size: 10px !important; }
+      }
+    `),
+    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "24px", flexWrap: "wrap", gap: "16px" } },
+      React.createElement("div", null,
+        React.createElement("h1", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "26px", fontWeight: 700, margin: 0, letterSpacing: "-0.01em" } }, "Weekrooster magazijn"),
+        React.createElement("p", { className: "no-print", style: { margin: "6px 0 0", fontSize: "13.5px", color: "#5A6472" } }, "Klik op een lege dag om iemand in te plannen, op een dienst om de tijden aan te passen. Klik op een naam voor het standaardrooster."),
+        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "10px", marginTop: "12px" } },
+          React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(w => w - 1), style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "13px", color: "#1B2A4A", cursor: "pointer" } }, "← vorige week"),
+          React.createElement("span", { style: { fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#1B2A4A", minWidth: "120px", textAlign: "center" } }, weekLabel, React.createElement("span", { className: "no-print", style: { color: "#5A6472", marginLeft: "6px" } }, weekOffset === 0 ? "(deze week)" : `(week ${getISOWeekNumber(currentMonday)})`)),
+          React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(w => w + 1), style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "13px", color: "#1B2A4A", cursor: "pointer" } }, "volgende week →"),
+          weekOffset !== 0 && React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(0), style: { border: "none", background: "transparent", fontSize: "12.5px", color: "#5A6472", textDecoration: "underline", cursor: "pointer" } }, "naar vandaag")
+        )
+      ),
+      React.createElement("div", { className: "no-print", style: { display: "flex", gap: "10px" } },
+        React.createElement("div", { style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "6px", padding: "10px 16px", textAlign: "center", minWidth: "84px" } },
+          React.createElement("div", { style: { fontFamily: "'IBM Plex Mono', monospace", fontSize: "20px", fontWeight: 600 } }, totalShifts),
+          React.createElement("div", { style: { fontSize: "11px", color: "#5A6472", marginTop: "2px" } }, "diensten totaal")
+        ),
+        React.createElement("div", { style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "6px", padding: "10px 16px", textAlign: "center", minWidth: "84px" } },
+          React.createElement("div", { style: { fontFamily: "'IBM Plex Mono', monospace", fontSize: "20px", fontWeight: 600 } }, formatHours(totalMinutes)),
+          React.createElement("div", { style: { fontSize: "11px", color: "#5A6472", marginTop: "2px" } }, "uren totaal")
+        ),
+        React.createElement("button", { onClick: applyTemplate, title: "Vult het standaardrooster in voor iedereen die deze week nog geen diensten heeft", style: { border: "1px solid #C9CDD3", background: "#FFFFFF", color: "#1B2A4A", borderRadius: "6px", padding: "0 14px", fontSize: "13px", cursor: "pointer" } }, "Standaardrooster toepassen"),
+        React.createElement("button", { onClick: () => window.print(), style: { border: "1px solid #1B2A4A", background: "#1B2A4A", color: "#FFFFFF", borderRadius: "6px", padding: "0 16px", fontSize: "13px", cursor: "pointer" } }, "Print rooster")
+      )
+    ),
+    React.createElement("div", { style: { display: "flex", gap: "16px", alignItems: "flex-start", flexWrap: "wrap" } },
+      React.createElement("div", { className: "rr-warehouse-grid", style: { display: "grid", gridTemplateColumns: "110px repeat(5, 150px)", gap: "5px", background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px", maxWidth: "100%", overflowX: "auto" } }, gridChildren),
+      React.createElement("div", { className: "no-print", style: { display: "flex", flexDirection: "column", gap: "12px", width: "300px", flexShrink: 0 } },
+        React.createElement(VacationPanel, { teamNames: people.map(p => p.name), driverIdByName, vacations, setVacations }),
+        React.createElement("div", { style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px 14px" } },
+          React.createElement("div", { style: { fontSize: "13px", fontWeight: 600, color: "#5A6472", marginBottom: "8px" } }, "Uren deze week"),
+          React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "4px" } },
+            people.map(person => React.createElement("div", { key: person.id, style: { display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: minutesPerPerson[person.id] === 0 ? "#A9433F" : "#1B2A4A" } },
+              React.createElement("span", null, person.name),
+              React.createElement("span", { style: { fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 } }, formatHours(minutesPerPerson[person.id]))
+            ))
+          )
+        )
+      )
+    ),
+    people.length === 0 && React.createElement("p", { className: "no-print", style: { fontSize: "12.5px", color: "#5A6472", marginTop: "8px" } }, "Nog niemand in het magazijnteam. Voeg hieronder iemand toe."),
+    React.createElement(PeopleBar, { team: "is_warehouse", label: "Magazijn:", otherLabel: "chauffeurs", driversRaw, setDriversRaw, setVacations, onPersonClick: setTemplatePerson }),
+    loading && React.createElement("p", { className: "no-print", style: { fontSize: "12px", color: "#8A93A0", marginTop: "8px" } }, "Rooster laden…"),
+    React.createElement("p", { className: "no-print", style: { marginTop: "22px", fontSize: "12px", color: "#8A93A0", maxWidth: "520px" } }, "Alles wordt automatisch opgeslagen op de server, ook na een refresh of tussen sessies."),
+    React.createElement(UnavailableMenu, { menu: contextMenu, onClose: () => setContextMenu(null), driverIdByName, vacations, setVacations }),
+    editor && React.createElement(ShiftEditor, {
+      editor,
+      onClose: () => setEditor(null),
+      onSave: (start, end) => { saveShift(editor.person, editor.day, start, end); setEditor(null); },
+      onRemove: () => { removeShift(editor.person, editor.day); setEditor(null); }
+    }),
+    templatePerson && React.createElement(TemplateModal, { person: templatePerson, templates, weekLabel, onSave: (days, applyToWeek) => saveTemplate(templatePerson, days, applyToWeek), onClose: () => setTemplatePerson(null) })
+  );
+}
+
+function App() {
+  const [tab, setTab] = useState("chauffeurs");
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [driversRaw, setDriversRaw] = useState([]);
+  const [vacations, setVacations] = useState([]);
+
+  useEffect(() => {
+    fetch("/api/drivers").then(r => r.json()).then(setDriversRaw);
+    fetch("/api/vacations").then(r => r.json()).then(setVacations);
+  }, []);
+
+  const shared = { weekOffset, setWeekOffset, driversRaw, setDriversRaw, vacations, setVacations };
+  const tabButton = (id, label) => React.createElement("button", {
+    key: id,
+    onClick: () => setTab(id),
+    style: { border: "1px solid #C9CDD3", borderBottom: tab === id ? "1px solid #EDF0F2" : "1px solid #C9CDD3", background: tab === id ? "#EDF0F2" : "#E1E5E9", color: tab === id ? "#1B2A4A" : "#5A6472", fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: "13.5px", padding: "8px 18px", borderRadius: "8px 8px 0 0", marginBottom: "-1px", cursor: "pointer" }
+  }, label);
+
+  return React.createElement("div", { style: { minHeight: "100%", background: "#EDF0F2" } },
+    React.createElement("div", { className: "no-print", style: { display: "flex", gap: "4px", padding: "14px 20px 0", borderBottom: "1px solid #C9CDD3", fontFamily: "'IBM Plex Sans', system-ui, sans-serif" } },
+      tabButton("chauffeurs", "Chauffeurs"),
+      tabButton("magazijn", "Magazijn")
+    ),
+    tab === "chauffeurs"
+      ? React.createElement(RouteRooster, shared)
+      : React.createElement(WarehouseRooster, shared)
+  );
+}
+
+    ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
   </script>
 </body>
 </html>

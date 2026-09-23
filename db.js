@@ -12,7 +12,9 @@ async function initSchema() {
 
     CREATE TABLE IF NOT EXISTS drivers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT UNIQUE NOT NULL
+      name TEXT UNIQUE NOT NULL,
+      is_driver INTEGER NOT NULL DEFAULT 1,
+      is_warehouse INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS vacations (
@@ -32,12 +34,46 @@ async function initSchema() {
       driver_id INTEGER,
       FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE SET NULL
     );
+
+    CREATE TABLE IF NOT EXISTS warehouse_shifts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      week_key TEXT NOT NULL,
+      day_index INTEGER NOT NULL,
+      driver_id INTEGER NOT NULL,
+      start_time TEXT,
+      end_time TEXT,
+      FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
+      UNIQUE (week_key, day_index, driver_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS warehouse_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      driver_id INTEGER NOT NULL,
+      day_index INTEGER NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
+      UNIQUE (driver_id, day_index)
+    );
+
+    -- Weken waarin het standaardrooster al is ingevuld
+    CREATE TABLE IF NOT EXISTS warehouse_weeks (
+      week_key TEXT PRIMARY KEY
+    );
   `);
 
-  // Migratie voor databases die zijn aangemaakt vóór de 'type'-kolom bestond
-  const columns = await db.execute('PRAGMA table_info(vacations)');
-  if (!columns.rows.some((col) => col.name === 'type')) {
-    await db.execute("ALTER TABLE vacations ADD COLUMN type TEXT NOT NULL DEFAULT 'vacation'");
+  // Migraties voor databases die zijn aangemaakt vóór deze kolommen bestonden
+  await addColumnIfMissing('vacations', 'type', "TEXT NOT NULL DEFAULT 'vacation'");
+  await addColumnIfMissing('drivers', 'is_driver', 'INTEGER NOT NULL DEFAULT 1');
+  await addColumnIfMissing('drivers', 'is_warehouse', 'INTEGER NOT NULL DEFAULT 0');
+  await addColumnIfMissing('warehouse_shifts', 'start_time', 'TEXT');
+  await addColumnIfMissing('warehouse_shifts', 'end_time', 'TEXT');
+}
+
+async function addColumnIfMissing(table, column, definition) {
+  const columns = await db.execute(`PRAGMA table_info(${table})`);
+  if (!columns.rows.some((col) => col.name === column)) {
+    await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
 }
 
