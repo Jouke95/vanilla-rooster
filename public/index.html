@@ -13,7 +13,7 @@
 <body>
   <div id="root"></div>
   <script>
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef, useLayoutEffect } = React;
 
 // Alle serveraanroepen gaan via api(). Bij een fout verschijnt een melding (zie App);
 // na een mislukte wijziging wordt alles opnieuw van de server geladen.
@@ -162,6 +162,71 @@ function getHolidays(year) {
 }
 function holidayName(isoDate) {
   return getHolidays(Number(isoDate.slice(0, 4)))[isoDate] || null;
+}
+
+// Schuift het zijpaneel (Vakantie / ziek) omlaag tot waar het rooster begint: marge = hoogte van titel en
+// weeknavigatie. Staat het paneel onder het rooster (smal scherm), dan geen marge.
+function useSidePanelOffset() {
+  const headerRef = useRef(null);
+  const sideRef = useRef(null);
+  const [offset, setOffset] = useState(0);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const header = headerRef.current, side = sideRef.current;
+      if (!header || !side) return;
+      const besideRooster = side.offsetLeft > header.offsetLeft + 50;
+      const style = window.getComputedStyle(header);
+      setOffset(besideRooster ? header.offsetHeight + parseFloat(style.marginBottom || 0) : 0);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (observer && headerRef.current) observer.observe(headerRef.current);
+    return () => { window.removeEventListener("resize", measure); if (observer) observer.disconnect(); };
+  }, []);
+  return { headerRef, sideRef, offset };
+}
+
+// Weeknavigatie bovenaan elk tabblad: pijltjes met weeknummer en datums ertussen, en rechts "deze week" of
+// een knop terug naar deze week (altijd iets op die plek, zodat er niets verspringt)
+function WeekNav({ weekOffset, setWeekOffset, monday, actions }) {
+  const friday = new Date(monday);
+  friday.setDate(monday.getDate() + 4);
+  const sameMonth = monday.getMonth() === friday.getMonth();
+  const otherYear = friday.getFullYear() !== new Date().getFullYear();
+  const dates = `${sameMonth ? monday.getDate() : formatDayDate(monday)} – ${formatDayDate(friday)}${otherYear ? ` ${friday.getFullYear()}` : ""}`;
+  const arrow = (label, delta, symbol) => React.createElement("button", {
+    className: "rr-week-arrow", onClick: () => setWeekOffset(w => w + delta), title: label, "aria-label": label
+  }, symbol);
+
+  return React.createElement("div", { className: "rr-week-nav", style: { display: "flex", alignItems: "stretch", gap: "10px", marginTop: "12px" } },
+    React.createElement("style", null, `
+      .rr-week-arrow { width: 34px; align-self: stretch; border: none; background: transparent; font-size: 20px; line-height: 1; color: #1B2A4A; cursor: pointer; }
+      .rr-week-arrow:hover { background: #EEF1F4; }
+      .rr-week-today { display: inline-flex; align-items: center; gap: 7px; height: 100%; box-sizing: border-box; padding: 0 14px; border: 1px solid #C9CDD3; border-radius: 8px; background: #FFFFFF; font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 600; color: #1B2A4A; cursor: pointer; transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease; }
+      .rr-week-today:hover { background: #EEF7F0; border-color: #7DB587; color: #2F6B3A; }
+      .rr-week-today-dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #4C9A5B; box-sizing: border-box; }
+      .rr-week-today:hover .rr-week-today-dot { background: #4C9A5B; }
+      @media print { .rr-week-arrow, .rr-week-side { display: none !important; } .rr-week-box { border: none !important; } }
+    `),
+    React.createElement("div", { className: "rr-week-box", style: { display: "inline-flex", alignItems: "stretch", background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", overflow: "hidden" } },
+      arrow("Vorige week", -1, "‹"),
+      React.createElement("div", { style: { minWidth: "130px", padding: "5px 14px", textAlign: "center", borderLeft: "1px solid #E3E6E9", borderRight: "1px solid #E3E6E9" } },
+        React.createElement("div", { className: "rr-week-number", style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "14px", fontWeight: 700, color: "#1B2A4A" } }, `Week ${getISOWeekNumber(monday)}`),
+        React.createElement("div", { className: "rr-week-dates", style: { fontSize: "12px", color: "#5A6472", marginTop: "1px" } }, dates)
+      ),
+      arrow("Volgende week", 1, "›")
+    ),
+    React.createElement("div", { className: "rr-week-side", style: { minWidth: "140px", display: "flex", alignItems: "center" } },
+      weekOffset === 0
+        ? React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12.5px", fontWeight: 600, color: "#2F6B3A" } },
+            React.createElement("span", { style: { width: "7px", height: "7px", borderRadius: "50%", background: "#4C9A5B" } }), "deze week")
+        : React.createElement("button", { className: "rr-week-today", onClick: () => setWeekOffset(0), title: "Terug naar de week van vandaag" },
+            React.createElement("span", { className: "rr-week-today-dot" }), "Naar deze week")
+    ),
+    // Knoppen van het tabblad rechts op dezelfde regel
+    actions && React.createElement("div", { className: "no-print", style: { marginLeft: "auto", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } }, actions)
+  );
 }
 
 function dayHeader(day) {
@@ -393,6 +458,7 @@ function UnavailableMenu({ menu, onClose, driverIdByName, vacations, setVacation
 }
 
 function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, vacations, setVacations, reloadKey }) {
+  const sidePanel = useSidePanelOffset();
   const [rawRoutes, setRawRoutes] = useState([]);
   const [routeTemplates, setRouteTemplates] = useState([]);
   const [templatePerson, setTemplatePerson] = useState(null);
@@ -641,27 +707,24 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
         p { font-size: 10px !important; }
       }
     `),
-    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "24px", flexWrap: "wrap", gap: "16px" } },
-      React.createElement("div", null,
-        React.createElement("h1", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "26px", fontWeight: 700, margin: 0, letterSpacing: "-0.01em" } }, "Weekrooster routes"),
-        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "10px", marginTop: "12px" } },
-          React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(w => w - 1), style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "13px", color: "#1B2A4A", cursor: "pointer" } }, "← vorige week"),
-          React.createElement("span", { style: { fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#1B2A4A", minWidth: "120px", textAlign: "center" } }, weekLabel, React.createElement("span", { className: "no-print", style: { color: "#5A6472", marginLeft: "6px" } }, weekOffset === 0 ? "(deze week)" : `(week ${getISOWeekNumber(currentMonday)})`)),
-          React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(w => w + 1), style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "13px", color: "#1B2A4A", cursor: "pointer" } }, "volgende week →"),
-          weekOffset !== 0 && React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(0), style: { border: "none", background: "transparent", fontSize: "12.5px", color: "#5A6472", textDecoration: "underline", cursor: "pointer" } }, "naar vandaag")
-        ),
-        React.createElement("div", { className: "no-print", style: { display: "flex", alignItems: "center", gap: "8px", marginTop: "10px", flexWrap: "wrap" } },
-          React.createElement("button", { onClick: applyTemplate, title: "Vaste chauffeurs invullen bij routes die nog niemand hebben. Toegewezen routes blijven staan.", style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "12.5px", color: "#1B2A4A", cursor: "pointer" } }, "Standaardrooster toepassen"),
-          React.createElement("button", { onClick: clearWeek, title: "Alle routes van deze week terug naar niet toegewezen", style: { border: "1px solid #E3B5B2", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "12.5px", color: "#A9433F", cursor: "pointer" } }, "Week leegmaken")
-        )
-      )
-    ),
     React.createElement("div", { style: { display: "flex", gap: "16px", alignItems: "flex-start", flexWrap: "wrap" } },
-      React.createElement("div", { className: "rr-driver-box", style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "0 12px 12px" } },
-        React.createElement("div", { className: "rr-driver-grid rr-sticky", style: { display: "grid", gridTemplateColumns: "110px repeat(5, 165px)", gap: "5px", position: "sticky", top: 0, zIndex: 5, background: "#FFFFFF", padding: "12px 0 8px", marginBottom: "6px", borderBottom: "1px solid #C9CDD3", borderRadius: "8px 8px 0 0" } }, stickyChildren),
-        React.createElement("div", { className: "rr-driver-grid", style: { display: "grid", gridTemplateColumns: "110px repeat(5, 165px)", gap: "5px" } }, gridChildren)
+      // Titel, weeknavigatie en rooster in één kolom, zodat de knoppen rechts gelijk eindigen met het rooster
+      React.createElement("div", { style: { minWidth: 0 } },
+        React.createElement("div", { ref: sidePanel.headerRef, style: { marginBottom: "20px" } },
+          React.createElement("div", null,
+            React.createElement("h1", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "26px", fontWeight: 700, margin: 0, letterSpacing: "-0.01em" } }, "Weekrooster routes"),
+            React.createElement(WeekNav, { weekOffset, setWeekOffset, monday: currentMonday, actions: [
+              React.createElement("button", { key: "apply", onClick: applyTemplate, title: "Vaste chauffeurs invullen bij routes die nog niemand hebben. Toegewezen routes blijven staan.", style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "12.5px", color: "#1B2A4A", cursor: "pointer" } }, "Standaardrooster toepassen"),
+              React.createElement("button", { key: "clear", onClick: clearWeek, title: "Alle routes van deze week terug naar niet toegewezen", style: { border: "1px solid #E3B5B2", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "12.5px", color: "#A9433F", cursor: "pointer" } }, "Week leegmaken")
+            ] })
+          )
+        ),
+        React.createElement("div", { className: "rr-driver-box", style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "0 12px 12px" } },
+          React.createElement("div", { className: "rr-driver-grid rr-sticky", style: { display: "grid", gridTemplateColumns: "110px repeat(5, 165px)", gap: "5px", position: "sticky", top: 0, zIndex: 5, background: "#FFFFFF", padding: "12px 0 8px", marginBottom: "6px", borderBottom: "1px solid #C9CDD3", borderRadius: "8px 8px 0 0" } }, stickyChildren),
+          React.createElement("div", { className: "rr-driver-grid", style: { display: "grid", gridTemplateColumns: "110px repeat(5, 165px)", gap: "5px" } }, gridChildren)
+        )
       ),
-      React.createElement("div", { className: "no-print", style: { display: "flex", flexDirection: "column", gap: "12px", width: "300px", flexShrink: 0 } },
+      React.createElement("div", { ref: sidePanel.sideRef, className: "no-print", style: { display: "flex", flexDirection: "column", gap: "12px", width: "300px", flexShrink: 0, marginTop: `${sidePanel.offset}px` } },
   React.createElement(VacationPanel, { teamNames: drivers, driverIdByName, vacations, setVacations, onRoutesChanged: reloadRoutes })
 )
     ),
@@ -781,6 +844,7 @@ function TemplateModal({ person, templates, defaultShift, weekLabel, onSave, onC
 
 // Rooster voor een team met diensten (magazijn of productie); team is een sleutel uit SHIFT_TEAMS
 function ShiftRooster({ team, weekOffset, setWeekOffset, driversRaw, setDriversRaw, vacations, setVacations, reloadKey }) {
+  const sidePanel = useSidePanelOffset();
   const cfg = SHIFT_TEAMS[team];
   const otherTeam = Object.keys(SHIFT_TEAMS).find(k => k !== team);
   const [shifts, setShifts] = useState(new Map());
@@ -947,25 +1011,22 @@ function ShiftRooster({ team, weekOffset, setWeekOffset, driversRaw, setDriversR
         p { font-size: 10px !important; }
       }
     `),
-    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "24px", flexWrap: "wrap", gap: "16px" } },
-      React.createElement("div", null,
-        React.createElement("h1", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "26px", fontWeight: 700, margin: 0, letterSpacing: "-0.01em" } }, cfg.title),
-        React.createElement("p", { className: "no-print", style: { margin: "6px 0 0", fontSize: "13.5px", color: "#5A6472" } }, "Klik op een lege dag om iemand in te plannen, op een dienst om de tijden aan te passen. Klik op een naam voor het standaardrooster."),
-        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "10px", marginTop: "12px" } },
-          React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(w => w - 1), style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "13px", color: "#1B2A4A", cursor: "pointer" } }, "← vorige week"),
-          React.createElement("span", { style: { fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#1B2A4A", minWidth: "120px", textAlign: "center" } }, weekLabel, React.createElement("span", { className: "no-print", style: { color: "#5A6472", marginLeft: "6px" } }, weekOffset === 0 ? "(deze week)" : `(week ${getISOWeekNumber(currentMonday)})`)),
-          React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(w => w + 1), style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "13px", color: "#1B2A4A", cursor: "pointer" } }, "volgende week →"),
-          weekOffset !== 0 && React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(0), style: { border: "none", background: "transparent", fontSize: "12.5px", color: "#5A6472", textDecoration: "underline", cursor: "pointer" } }, "naar vandaag")
-        ),
-        React.createElement("div", { className: "no-print", style: { display: "flex", alignItems: "center", gap: "8px", marginTop: "10px", flexWrap: "wrap" } },
-          React.createElement("button", { onClick: applyTemplate, title: "Vult het standaardrooster in voor iedereen die deze week nog geen diensten heeft", style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "12.5px", color: "#1B2A4A", cursor: "pointer" } }, "Standaardrooster toepassen"),
-          React.createElement("button", { onClick: clearWeek, title: "Alle diensten van deze week weghalen", style: { border: "1px solid #E3B5B2", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "12.5px", color: "#A9433F", cursor: "pointer" } }, "Week leegmaken")
-        )
-      )
-    ),
     React.createElement("div", { style: { display: "flex", gap: "16px", alignItems: "flex-start", flexWrap: "wrap" } },
-      React.createElement("div", { className: "rr-warehouse-grid", style: { display: "grid", gridTemplateColumns: "110px repeat(5, 150px)", gap: "5px", background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px", maxWidth: "100%", overflowX: "auto" } }, gridChildren),
-      React.createElement("div", { className: "no-print", style: { display: "flex", flexDirection: "column", gap: "12px", width: "300px", flexShrink: 0 } },
+      // Titel, weeknavigatie en rooster in één kolom, zodat de knoppen rechts gelijk eindigen met het rooster
+      React.createElement("div", { style: { minWidth: 0 } },
+        React.createElement("div", { ref: sidePanel.headerRef, style: { marginBottom: "20px" } },
+          React.createElement("div", null,
+            React.createElement("h1", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "26px", fontWeight: 700, margin: 0, letterSpacing: "-0.01em" } }, cfg.title),
+            React.createElement("p", { className: "no-print", style: { margin: "6px 0 0", fontSize: "13.5px", color: "#5A6472" } }, "Klik op een lege dag om iemand in te plannen, op een dienst om de tijden aan te passen. Klik op een naam voor het standaardrooster."),
+            React.createElement(WeekNav, { weekOffset, setWeekOffset, monday: currentMonday, actions: [
+              React.createElement("button", { key: "apply", onClick: applyTemplate, title: "Vult het standaardrooster in voor iedereen die deze week nog geen diensten heeft", style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "12.5px", color: "#1B2A4A", cursor: "pointer" } }, "Standaardrooster toepassen"),
+              React.createElement("button", { key: "clear", onClick: clearWeek, title: "Alle diensten van deze week weghalen", style: { border: "1px solid #E3B5B2", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "12.5px", color: "#A9433F", cursor: "pointer" } }, "Week leegmaken")
+            ] })
+          )
+        ),
+        React.createElement("div", { className: "rr-warehouse-grid", style: { display: "grid", gridTemplateColumns: "110px repeat(5, 150px)", gap: "5px", background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px", maxWidth: "100%", overflowX: "auto" } }, gridChildren)
+      ),
+      React.createElement("div", { ref: sidePanel.sideRef, className: "no-print", style: { display: "flex", flexDirection: "column", gap: "12px", width: "300px", flexShrink: 0, marginTop: `${sidePanel.offset}px` } },
         React.createElement(VacationPanel, { teamNames: people.map(p => p.name), driverIdByName, vacations, setVacations }),
         React.createElement("div", { style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px 14px" } },
           React.createElement("div", { style: { fontSize: "13px", fontWeight: 600, color: "#5A6472", marginBottom: "8px" } }, "Uren deze week"),

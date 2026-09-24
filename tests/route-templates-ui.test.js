@@ -73,7 +73,7 @@ test('Standaardrooster chauffeurs', async t => {
 
   // Nieuwe week: vaste routes en standaardrooster in één verzoek
   const n3 = calls.length;
-  await act(async () => { byText('volgende week →', 'button')[0].click(); });
+  await act(async () => { w.document.querySelector('[aria-label="Volgende week"]').click(); });
   for (let i = 0; i < 20 && w.document.getElementById('root').textContent.includes('Rooster laden…'); i++) await tick();
   const next = calls.slice(n3);
   const newWeek = next.filter(c => c.startsWith('POST /api/routes/new-week'));

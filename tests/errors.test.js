@@ -34,12 +34,12 @@ test('Foutmeldingen bij mislukt opslaan of laden', async t => {
 
   // 3. Laadfout overschrijft melding over niet-opgeslagen werk niet
   state.failNext = { match: (m, u) => u === '/api/warehouse-shifts/open-week', status: 500, body: { error: 'serverfout' } };
-  await act(async () => { byText('volgende week →', 'button')[0].click(); }); await tick(); await tick();
+  await act(async () => { w.document.querySelector('[aria-label="Volgende week"]').click(); }); await tick(); await tick();
   check('Laadfout laat eerdere opslagmelding staan', banner().textContent.includes('Niet opgeslagen'));
   await act(async () => { byText('×', 'span').find(e => e.title === 'Sluiten').click(); });
   n = calls.length;
   state.failNext = { match: (m, u) => u === '/api/warehouse-shifts/open-week', status: 500, body: { error: 'serverfout' } };
-  await act(async () => { byText('volgende week →', 'button')[0].click(); }); await tick(); await tick();
+  await act(async () => { w.document.querySelector('[aria-label="Volgende week"]').click(); }); await tick(); await tick();
   check('Laadfout geeft "Kon gegevens niet laden"', banner() && banner().textContent.includes('Kon gegevens niet laden: serverfout'));
   check('Laadfout start geen herlaadlus', !calls.slice(n).some(c => c.startsWith('GET /api/drivers')));
 

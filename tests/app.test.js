@@ -107,9 +107,14 @@ test('Teams, magazijnrooster, uren en standaardrooster', async t => {
   check('Rechtsklik maakt iemand niet beschikbaar', calls.some(c => c.startsWith('POST /api/vacations') && c.includes('unavailable')));
 
   // Week behouden bij wisselen
-  await act(async () => { byText('volgende week →', 'button')[0].click(); }); await tick();
+  await act(async () => { w.document.querySelector('[aria-label="Volgende week"]').click(); }); await tick();
   await act(async () => { byText('Chauffeurs', 'button')[0].click(); }); await tick();
-  check('Week blijft behouden bij wisselen van tab', byText('naar vandaag', 'button').length === 1);
+  check('Week blijft behouden bij wisselen van tab', byText('Naar deze week', 'button').length === 1);
+  await act(async () => { byText('Naar deze week', 'button')[0].click(); }); await tick();
+  check('"Naar deze week" gaat terug en toont weer het label "deze week"', byText('Naar deze week', 'button').length === 0 && text().includes('deze week'));
+  await act(async () => { w.document.querySelector('[aria-label="Vorige week"]').click(); }); await tick();
+  const weekNr = w.document.querySelector('.rr-week-number').textContent;
+  check('Pijltje terug: weeknummer één lager', weekNr === `Week ${w.getISOWeekNumber(new Date(mon.getTime() - 7 * 86400000))}`);
 
   await check.report(t);
 });

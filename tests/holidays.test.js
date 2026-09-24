@@ -20,9 +20,9 @@ test('Feestdagen in de kerstweek van 2026', async t => {
   // Naar de week van 21 dec 2026
   const target = new Date(2026, 11, 21);
   const weeks = Math.round((target - mon) / (7 * 86400000));
-  for (let i = 0; i < weeks; i++) await act(async () => { byText('volgende week →', 'button')[0].click(); });
+  for (let i = 0; i < weeks; i++) await act(async () => { w.document.querySelector('[aria-label="Volgende week"]').click(); });
   await tick();
-  check('Week van 21 dec geopend', text().includes('21 dec – 25 dec'));
+  check('Week van 21 dec geopend (week 52, 21 – 25 dec)', text().includes('Week 52') && text().includes('21 – 25 dec'));
 
   // Chauffeurs
   const headers = gridKids().slice(1, 6).map(e => e.textContent);
