@@ -47,7 +47,7 @@ test('Gecombineerde print chauffeurs + magazijn', async t => {
   check('Ad dinsdag (werkt niet) wit met streepje', row('Ad')[2] === '–' && colorsOf('Ad')[2] === 'rgb(255, 255, 255)');
   check('Print: tekst in de vakjes 12px en vet', printed.cellFont && printed.cellFont.size === '12px' && printed.cellFont.weight === '700');
   check('Print staand A4', printed.css.includes('size: A4 portrait'));
-  check('Legenda met Chauffeur, Magazijn, Vakantie/vrij, Ziek', ['Chauffeur', 'Magazijn', 'Vakantie/vrij', 'Ziek'].every(l => printed.legend.includes(l)));
+  check('Legenda met Chauffeur, Magazijn, Vakantie/vrij, Ziek, Niet beschikbaar', ['Chauffeur', 'Magazijn', 'Vakantie/vrij', 'Ziek', 'Niet beschikbaar'].every(l => printed.legend.includes(l)));
   check('Tabbladinhoud verborgen tijdens printen', printed.tabHidden);
   check('Printweergave weer weg na printen', !w.document.querySelector('.rr-print-only'));
   check('Gewone tab-inhoud weer zichtbaar', w.document.getElementById('root').firstChild.children[1].className === '');

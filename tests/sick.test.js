@@ -59,6 +59,10 @@ test('Status ziek', async t => {
   check('Paneel stuurt ziekmelding met type sick', calls.slice(n).some(c => c.startsWith('POST /api/vacations') && c.includes('"type":"sick"') && c.includes(`"start_date":"${day(1)}"`)));
   check('Na ziekmelding worden de routes opnieuw geladen', calls.slice(n).some(c => c.startsWith(`GET /api/routes?week_key=${wk}`)));
 
+  // Rechtsklik: niet beschikbaar (Bert woensdag), voor de printkleur verderop
+  await act(async () => { cellsOf('Bert')[2].dispatchEvent(new w.MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 })); });
+  await act(async () => { byText('Niet beschikbaar', 'div').find(e => e.style.cursor === 'pointer').click(); }); await tick();
+
   // Rechtsklik: één dag ziek
   await act(async () => { cellsOf('Ad')[0].dispatchEvent(new w.MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 })); });
   check('Rechtsklikmenu toont "Ziek (deze dag)"', byText('Ziek (deze dag)', 'div').length === 1);
@@ -82,15 +86,19 @@ test('Status ziek', async t => {
   // Print
   let printed = '';
   let sickColor = '';
+  let unavailableColor = '';
   w.print = () => {
     const el = w.document.querySelector('.rr-print-only');
     printed = el.textContent;
     const td = [...el.querySelectorAll('td')].find(e => e.textContent === 'Ziek');
     sickColor = td && td.style.background;
+    const na = [...el.querySelectorAll('td')].find(e => e.textContent === 'Niet beschikbaar');
+    unavailableColor = na && na.style.background;
   };
   await act(async () => { byText('Print chauffeurs + magazijn', 'button')[0].click(); }); await tick();
   check('Print toont "Ziek"', printed.includes('Ziek'));
   check('Ziek is rood in de print', sickColor === 'rgb(242, 139, 130)');
+  check('Niet beschikbaar is lichtgrijs in de print', unavailableColor === 'rgb(213, 213, 213)');
 
   await check.report(t);
 });

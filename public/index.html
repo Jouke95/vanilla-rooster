@@ -191,12 +191,13 @@ const ABSENCE = {
   unavailable: { label: "Niet beschikbaar", color: "#B0524E", background: "#FBEEED", border: "#E3B5B2" }
 };
 
-// Kleuren voor de print, zoals Bennie ze gewend is. Niet beschikbaar en niet werken: wit.
+// Kleuren voor de print, zoals Bennie ze gewend is. Niet werken: wit.
 const PRINT_COLORS = {
-  driver: "#CDEBC5",     // lichtgroen
-  warehouse: "#C9E2F8",  // lichtblauw
-  vacation: "#FFB866",   // oranje
-  sick: "#F28B82",       // rood
+  driver: "#CDEBC5",       // lichtgroen
+  warehouse: "#C9E2F8",    // lichtblauw
+  vacation: "#FFB866",     // oranje
+  sick: "#F28B82",         // rood
+  unavailable: "#D5D5D5",  // lichtgrijs
   none: "#FFFFFF"
 };
 
@@ -1038,7 +1039,7 @@ function CombinedPrint({ weekOffset, driversRaw, vacations, onDone }) {
   const sectionRow = label => React.createElement("tr", { key: `section-${label}` },
     React.createElement("td", { colSpan: 6, style: { padding: "8px 4px 3px", fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "14px", color: "#000000", borderBottom: "2px solid #000000" } }, label)
   );
-  const legend = [["Chauffeur", PRINT_COLORS.driver], ["Magazijn", PRINT_COLORS.warehouse], ["Vakantie/vrij", PRINT_COLORS.vacation], ["Ziek", PRINT_COLORS.sick]];
+  const legend = [["Chauffeur", PRINT_COLORS.driver], ["Magazijn", PRINT_COLORS.warehouse], ["Vakantie/vrij", PRINT_COLORS.vacation], ["Ziek", PRINT_COLORS.sick], ["Niet beschikbaar", PRINT_COLORS.unavailable]];
 
   const unassignedByDay = days.map(day => data.routes.filter(r => r.day_index === day.dayIndex && !driverIds.has(r.driver_id)));
   const hasUnassigned = unassignedByDay.some(list => list.length > 0);

@@ -7,7 +7,7 @@ Verzameld op 23 september 2026. Nog niet gebouwd tenzij anders vermeld.
 - **Minder scrollen bij slepen** — *Gebouwd (24 sep 2026):* dagnamen en "Niet toegewezen" blijven bovenaan staan bij scrollen, rijen compacter.
 - **Status "Ziek"** — *Gebouwd (24 sep 2026):* via het paneel (meerdere dagen) of rechtsklik (één dag); routes van die dagen gaan terug naar "Niet toegewezen".
 - **Productie als aparte groep** — werkt grotendeels als het magazijn (diensten met tijden, standaardrooster).
-- **Print in kleur, staand** — *Gebouwd (24 sep 2026)* voor "Print chauffeurs + magazijn": staand A4, groepskleuren, vakantie oranje, ziek rood, niet werken wit met "–", tekst zwart. Nog open: lichtgeel voor productie; "Niet beschikbaar" is nu wit; de printknoppen per tabblad printen nog de oude weergave.
+- **Print in kleur, staand** — *Gebouwd (24 sep 2026)* voor "Print chauffeurs + magazijn": staand A4, groepskleuren, vakantie oranje, ziek rood, niet werken wit met "–", tekst zwart. "Niet beschikbaar" lichtgrijs. Nog open: lichtgeel voor productie. De printknoppen per tabblad printen nog de oude weergave (bewust zo gelaten).
 
 ## Chauffeurs
 
