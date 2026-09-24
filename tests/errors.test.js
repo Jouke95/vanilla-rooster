@@ -47,7 +47,7 @@ test('Foutmeldingen bij mislukt opslaan of laden', async t => {
   await act(async () => { byText('×', 'span').find(e => e.title === 'Sluiten').click(); });
   await act(async () => { byText('Chauffeurs', 'button')[0].click(); }); await tick();
   state.failNext = { match: (m, u) => m === 'POST' && u === '/api/routes', status: 400, body: { error: 'week_key en day_index zijn verplicht' } };
-  await act(async () => { byText('+ route', 'button')[0].click(); }); await tick(); await tick();
+  await act(async () => { w.document.querySelector('.rr-add-route').click(); }); await tick(); await tick();
   check('Servermelding bij 400 wordt getoond', banner() && banner().textContent.includes('Niet opgeslagen: week_key en day_index zijn verplicht'));
   check('Melding niet geprint (no-print)', banner().className === 'no-print');
 
@@ -56,7 +56,7 @@ test('Foutmeldingen bij mislukt opslaan of laden', async t => {
   w.goToLogin = () => { loginRedirects++; };
   await act(async () => { byText('×', 'span').find(e => e.title === 'Sluiten').click(); });
   state.failNext = { match: (m, u) => m === 'POST' && u === '/api/routes', status: 401, body: { error: 'niet ingelogd' } };
-  await act(async () => { byText('+ route', 'button')[0].click(); }); await tick();
+  await act(async () => { w.document.querySelector('.rr-add-route').click(); }); await tick();
   check('401: doorgestuurd naar inlogscherm', loginRedirects === 1);
   check('401: geen foutmelding', !banner());
 

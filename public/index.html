@@ -547,13 +547,30 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
   const stickyChildren = [];
   stickyChildren.push(React.createElement("div", { key: "hdr-empty" }, ""));
   days.forEach(day => stickyChildren.push(
-    dayHeader(day)
+    React.createElement("div", { key: `hdr-wrap-${day.id}`, style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "4px" } },
+      dayHeader(day),
+      React.createElement("button", { className: "rr-add-route no-print", onClick: () => addRoute(day.dayIndex), title: `Route toevoegen op ${day.name.toLowerCase()}`, "aria-label": `Route toevoegen op ${day.name.toLowerCase()}` }, "+")
+    )
   ));
 
   const totalUnassigned = days.reduce((sum, d) => sum + unassignedByDay[d.dayIndex].length, 0);
   const unassignedPrintClass = totalUnassigned === 0 ? "no-print" : "";
-  stickyChildren.push(React.createElement("div", { key: "unassigned-label", className: unassignedPrintClass, style: { fontSize: "12px", fontWeight: 600, color: "#5A6472", alignSelf: "flex-start", paddingTop: "10px" } }, "Niet toegewezen"));
-  days.forEach(day => {
+  stickyChildren.push(React.createElement("div", { key: "unassigned-label", className: unassignedPrintClass, style: { fontSize: "12px", fontWeight: 600, color: "#5A6472", alignSelf: totalUnassigned === 0 ? "center" : "flex-start", paddingTop: totalUnassigned === 0 ? 0 : "10px" } }, "Niet toegewezen"));
+  // Alles verdeeld: één smalle balk in plaats van vijf lege vakjes. Er een route op slepen zet hem terug.
+  if (totalUnassigned === 0) stickyChildren.push(React.createElement("div", {
+    key: "unassigned-none",
+    className: "rr-unassigned-none no-print",
+    onDragOver: e => { e.preventDefault(); e.currentTarget.style.background = "#FBEDD0"; },
+    onDragLeave: e => { e.currentTarget.style.background = "#F3F8F3"; },
+    onDrop: e => {
+      e.currentTarget.style.background = "#F3F8F3";
+      let data;
+      try { data = JSON.parse(e.dataTransfer.getData("text/plain")); } catch (err) { return; }
+      if (data) handleDropOnCell(e, data.dayIndex, null);
+    },
+    style: { gridColumn: "2 / -1", background: "#F3F8F3", border: "1px solid #DCE5DC", borderRadius: "6px", padding: "5px 10px", fontSize: "12.5px", fontWeight: 600, color: "#2F6B3A" }
+  }, "✓ Alles toegewezen"));
+  else days.forEach(day => {
     const list = unassignedByDay[day.dayIndex];
     stickyChildren.push(React.createElement("div", {
       key: `unassigned-${day.id}`,
@@ -564,8 +581,7 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
       style: { display: "flex", flexDirection: "column", gap: "3px", background: "#FDF6EC", border: "1px solid #E8A33D", borderRadius: "6px", padding: "4px", minHeight: "36px", boxSizing: "border-box", maxHeight: "30vh", overflowY: "auto" }
     },
       day.holiday && list.length > 0 && React.createElement("div", { className: "no-print", style: { fontSize: "11px", color: "#9A5B0B" } }, "Feestdag: sleep routes naar een andere dag"),
-      list.map(route => renderRouteChip(route, day, null)),
-      React.createElement("button", { className: "rr-add-btn no-print", onClick: () => addRoute(day.dayIndex), style: { width: "100%", padding: "4px 0", borderRadius: "5px", border: "1px dashed #B8BFC6", background: "transparent", color: "#5A6472", fontSize: "11px", cursor: "pointer" } }, "+ route")
+      list.map(route => renderRouteChip(route, day, null))
     ));
   });
 
@@ -602,7 +618,8 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
       .rr-driver-chip:hover .rr-driver-x { opacity: 1; }
       .rr-driver-x { opacity: 0; transition: opacity 0.12s ease; cursor: pointer; }
       .rr-code-input { font-family: 'IBM Plex Mono', monospace; font-size: 14.5px; font-weight: 600; border: none; background: transparent; outline: none; width: 100%; color: #4A5568; letter-spacing: 0.01em; }
-      .rr-add-btn:hover { background: #1B2A4A; color: #EDF0F2; }
+      .rr-add-route { border: none; background: transparent; width: 22px; height: 22px; border-radius: 50%; padding: 0; font-family: 'IBM Plex Sans', sans-serif; font-size: 17px; line-height: 20px; color: #8A93A0; cursor: pointer; flex-shrink: 0; }
+      .rr-add-route:hover { color: #1B2A4A; background: #E3E6E9; }
       .rr-person-name:hover { text-decoration: underline; }
       .rr-chip-actions { opacity: 0; transition: opacity 0.12s ease; }
       .rr-driver-cell:hover .rr-chip-actions { opacity: 1; }
