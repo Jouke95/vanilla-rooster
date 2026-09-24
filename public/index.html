@@ -561,6 +561,9 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
   const [rawRoutes, setRawRoutes] = useState([]);
   const [routeTemplates, setRouteTemplates] = useState([]);
   const [templatePerson, setTemplatePerson] = useState(null);
+  // TIJDELIJK: welke weergave voor meerdere routes (A of B), onthouden in deze browser
+  const [multiStyle, setMultiStyleState] = useState(() => { try { return localStorage.getItem("rr-multi-style") === "B" ? "B" : "A"; } catch (err) { return "A"; } });
+  const setMultiStyle = v => { setMultiStyleState(v); try { localStorage.setItem("rr-multi-style", v); } catch (err) {} };
   const [teamShifts, setTeamShifts] = useState({});  // per dienstenteam de diensten van deze week
   const [loading, setLoading] = useState(true);
   const [contextMenu, setContextMenu] = useState(null);
@@ -682,8 +685,7 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
     updateRoute(data.routeId, "driver", targetDriverName || "");
   };
 
-  // compact: meerdere routes in één vakje, dan kleinere letters zodat het vakje niet veel hoger wordt
-  function renderRouteChip(route, day, driverName, compact) {
+  function renderRouteChip(route, day, driverName) {
     // Rood als de chauffeur die dag vakantie heeft of ziek is
     const warn = driverName && ["vacation", "sick"].includes(absence(driverName, day.isoDate));
     return React.createElement("div", {
@@ -692,14 +694,46 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
       draggable: true,
       onDragStart: e => { e.dataTransfer.setData("text/plain", JSON.stringify({ routeId: route.id, dayIndex: day.dayIndex })); },
       style: driverName
-        ? { position: "relative", display: "flex", alignItems: "center", padding: compact ? "0 4px" : "1px 4px", borderRadius: "4px", border: `1px solid ${warn ? "#C0433D" : "transparent"}`, background: warn ? "#FBEAE9" : "transparent", cursor: "grab" }
+        ? { position: "relative", display: "flex", alignItems: "center", padding: "1px 4px", borderRadius: "4px", border: `1px solid ${warn ? "#C0433D" : "transparent"}`, background: warn ? "#FBEAE9" : "transparent", cursor: "grab" }
         : { position: "relative", display: "flex", alignItems: "center", padding: "3px 6px", borderRadius: "5px", border: "1px solid #E8C58A", background: "#FFFFFF", cursor: "grab" }
     },
-      React.createElement("input", { className: "rr-code-input", style: { fontSize: compact ? "11px" : "12.5px", textAlign: driverName ? "center" : "left", color: driverName && !warn ? "#2F6B3A" : "#4A5568", cursor: route.fixed ? "grab" : "text" }, value: route.code, placeholder: "Routenaam", readOnly: route.fixed, onChange: e => updateRoute(route.id, "code", e.target.value) }),
+      React.createElement("input", { className: "rr-code-input", style: { fontSize: "12.5px", textAlign: driverName ? "center" : "left", color: driverName && !warn ? "#2F6B3A" : "#4A5568", cursor: route.fixed ? "grab" : "text" }, value: route.code, placeholder: "Routenaam", readOnly: route.fixed, onChange: e => updateRoute(route.id, "code", e.target.value) }),
       // Knoppen alleen zichtbaar bij aanwijzen, zodat de naam van de route in het midden staat
       React.createElement("span", { className: "rr-chip-actions no-print", style: { position: "absolute", right: "4px", top: "50%", transform: "translateY(-50%)", display: "flex", gap: "5px", background: driverName ? (warn ? "#FBEAE9" : "#DDEFE0") : "#FFFFFF", paddingLeft: "3px" } },
         driverName && React.createElement("span", { title: "Terug naar niet toegewezen", onClick: () => updateRoute(route.id, "driver", ""), style: { cursor: "pointer", color: "#5A6472", fontSize: "12px" } }, "↩"),
         !route.fixed && React.createElement("span", { title: "Route verwijderen", onClick: () => removeRoute(route.id), style: { cursor: "pointer", color: "#A9433F", fontSize: "12px" } }, "×")
+      )
+    );
+  }
+
+  // Meerdere routes op één dag, "Amsterdam" verkort tot "A'dam". Elke route blijft los te slepen; ↩ en × bij aanwijzen.
+  // TIJDELIJK twee weergaven waar Bennie uit kan kiezen (schakelaar bij de titel):
+  //   A: labeltjes die doorlopen, B: onder elkaar
+  const shortRouteName = code => (code || "route").replace(/^Amsterdam\b/, "A'dam");
+  function renderMultiRoutes(routes, day, driverName) {
+    const warnAll = ["vacation", "sick"].includes(absence(driverName, day.isoDate));
+    const green = warnAll ? "#A9433F" : "#2F6B3A";
+    const container = {
+      A: { display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "3px" },
+      B: { display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.3 }
+    }[multiStyle];
+    const chip = {
+      A: { background: warnAll ? "#FBEAE9" : "#FFFFFF", border: `1px solid ${warnAll ? "#C0433D" : "#7DB587"}`, borderRadius: "10px", padding: "0 7px", fontSize: "11.5px", lineHeight: "18px" },
+      B: { padding: "0 2px", borderRadius: "3px", background: warnAll ? "#FBEAE9" : "transparent" }
+    }[multiStyle];
+    return React.createElement("div", { className: `rr-multi-routes rr-multi-${multiStyle}`, title: routes.map(r => r.code || "route").join(" · "), style: { ...container, fontFamily: "'IBM Plex Mono', monospace", fontSize: "12.5px", fontWeight: 600, color: green } },
+      routes.map(route =>
+        React.createElement("span", {
+          key: route.id, className: "rr-driver-cell rr-multi-route", draggable: true, title: route.code || "route",
+          onDragStart: e => { e.dataTransfer.setData("text/plain", JSON.stringify({ routeId: route.id, dayIndex: day.dayIndex })); },
+          style: { position: "relative", whiteSpace: "nowrap", cursor: "grab", ...chip }
+        },
+          shortRouteName(route.code),
+          React.createElement("span", { className: "rr-chip-actions no-print", style: { position: "absolute", right: 0, top: "50%", transform: "translateY(-50%)", display: "flex", gap: "4px", background: warnAll ? "#FBEAE9" : multiStyle === "A" ? "#FFFFFF" : "#DDEFE0", padding: "0 3px", borderRadius: "10px", fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 400 } },
+            React.createElement("span", { title: "Terug naar niet toegewezen", onClick: () => updateRoute(route.id, "driver", ""), style: { cursor: "pointer", color: "#5A6472", fontSize: "12px" } }, "↩"),
+            !route.fixed && React.createElement("span", { title: "Route verwijderen", onClick: () => removeRoute(route.id), style: { cursor: "pointer", color: "#A9433F", fontSize: "12px" } }, "×")
+          )
+        )
       )
     );
   }
@@ -764,12 +798,12 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
         onDragLeave: e => { e.currentTarget.style.background = baseColor; },
         onDrop: e => { if (blocked) return; e.currentTarget.style.background = baseColor; handleDropOnCell(e, day.dayIndex, name); },
         onContextMenu: e => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, driverName: name, isoDate: day.isoDate }); },
-        style: { position: "relative", display: "flex", flexDirection: "column", justifyContent: "center", gap: assigned.length > 1 ? "0" : "2px", boxSizing: "border-box", minHeight: "36px", background: baseColor, border: `1px solid ${borderColor}`, borderRadius: "6px", padding: "4px" }
+        style: { position: "relative", display: "flex", flexDirection: "column", justifyContent: "center", gap: "2px", boxSizing: "border-box", minHeight: "36px", background: baseColor, border: `1px solid ${borderColor}`, borderRadius: "6px", padding: "4px" }
       },
         away && React.createElement("div", { style: { fontSize: "12.5px", color: ABSENCE[away].color, fontWeight: 600, textAlign: "center" } }, ABSENCE[away].label),
         // Alleen bij echt dubbel werk: rijdt die dag én werkt in magazijn of productie
         !blocked && assigned.length > 0 && otherWorkOn(name, day.dayIndex).length > 0 && React.createElement(CrossLabel, { warn: true }, otherWorkOn(name, day.dayIndex).join(", ")),
-        assigned.map(route => renderRouteChip(route, day, name, assigned.length > 1))
+        assigned.length > 1 ? renderMultiRoutes(assigned, day, name) : assigned.map(route => renderRouteChip(route, day, name))
       ));
     });
   });
@@ -811,7 +845,16 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
       React.createElement("div", { style: { minWidth: 0 } },
         React.createElement("div", { ref: sidePanel.headerRef, style: { marginBottom: "20px" } },
           React.createElement("div", null,
-            React.createElement("h1", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "26px", fontWeight: 700, margin: 0, letterSpacing: "-0.01em" } }, "Weekrooster routes"),
+            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" } },
+              React.createElement("h1", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "26px", fontWeight: 700, margin: 0, letterSpacing: "-0.01em" } }, "Weekrooster routes"),
+              // TIJDELIJK: schakelaar om de weergave van meerdere routes te vergelijken
+              React.createElement("div", { className: "rr-multi-toggle no-print", style: { display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#9A5B0B", background: "#FDF1DC", border: "1px dashed #E8C58A", borderRadius: "8px", padding: "3px 8px" } },
+                "Meerdere routes (tijdelijk):",
+                [["A", "labeltjes"], ["B", "onder elkaar"]].map(([v, label]) => React.createElement("button", {
+                  key: v, "aria-pressed": multiStyle === v, onClick: () => setMultiStyle(v), title: label,
+                  style: { border: "1px solid #E8C58A", borderRadius: "6px", padding: "2px 8px", fontSize: "12px", cursor: "pointer", background: multiStyle === v ? "#9A5B0B" : "#FFFFFF", color: multiStyle === v ? "#FFFFFF" : "#9A5B0B" }
+                }, `${v} · ${label}`)))
+            ),
             React.createElement(WeekNav, { weekOffset, setWeekOffset, monday: currentMonday, actions: [
               { label: "Standaardrooster toepassen", icon: "↻", onClick: applyTemplate, title: "Vaste chauffeurs invullen bij routes die nog niemand hebben. Toegewezen routes blijven staan." },
               { label: "Week leegmaken", icon: "✕", onClick: clearWeek, title: "Alle routes van deze week terug naar niet toegewezen", danger: true },

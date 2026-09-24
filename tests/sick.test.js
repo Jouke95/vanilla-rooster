@@ -12,8 +12,8 @@ test('Status ziek', async t => {
     { id: 3, driver_id: 2, driver_name: 'Bert', start_date: day(4), end_date: day(4), type: 'sick' }
   );
   // Nieuwe ziekmelding: server meldt dat er een route terug is gezet
-  // Bert rijdt dinsdag twee routes
-  db.routes.push({ id: 20, day_index: 1, code: 'Den Haag', driver_id: 2, driver_name: 'Bert' });
+  // Bert rijdt dinsdag drie routes
+  db.routes.push({ id: 20, day_index: 1, code: 'Den Haag', driver_id: 2, driver_name: 'Bert' }, { id: 21, day_index: 1, code: 'Amsterdam Centrum', driver_id: 2, driver_name: 'Bert' });
   const mockFetch = w.fetch;
   w.fetch = async (url, opts = {}) => {
     const res = await mockFetch(url, opts);
@@ -39,7 +39,20 @@ test('Status ziek', async t => {
   check('Ad dinsdag (rijdt niet) lichtgrijs zonder rand', cellsOf('Ad')[1].style.background === 'rgb(245, 246, 248)' && cellsOf('Ad')[1].style.border.includes('transparent'));
   const fontSizes = cell => [...cell.querySelectorAll('input')].map(i => i.style.fontSize);
   check('Eén route in een vakje: gewone lettergrootte', fontSizes(cellsOf('Ad')[0]).join() === '12.5px');
-  check('Twee routes in een vakje: kleinere letters', fontSizes(cellsOf('Bert')[1]).join() === '11px,11px');
+  const multi = cellsOf('Bert')[1].querySelector('.rr-multi-routes');
+  const names = [...multi.querySelectorAll('.rr-multi-route')].map(e => e.firstChild.textContent);
+  check("Meerdere routes op één regel, Amsterdam verkort tot A'dam", names.join(' · ') === "Rotterdam · Den Haag · A'dam Centrum");
+  check('Meerdere routes: elk los te slepen', [...multi.querySelectorAll('.rr-multi-route')].every(e => e.draggable));
+  check('Meerdere routes: namen nooit afgebroken', [...multi.querySelectorAll('.rr-multi-route')].every(e => e.style.whiteSpace === 'nowrap'));
+  // Tijdelijke schakelaar tussen de weergaven A en B
+  const toggle = v => [...w.document.querySelectorAll('.rr-multi-toggle button')].find(b => b.textContent.startsWith(v));
+  check('Standaard weergave A (labeltjes)', !!cellsOf('Bert')[1].querySelector('.rr-multi-A'));
+  await act(async () => { toggle('B').click(); });
+  check('Weergave B: onder elkaar', !!cellsOf('Bert')[1].querySelector('.rr-multi-B') && cellsOf('Bert')[1].querySelector('.rr-multi-B').style.flexDirection === 'column');
+  check('Alleen keuze A en B', [...w.document.querySelectorAll('.rr-multi-toggle button')].map(b => b.textContent[0]).join('') === 'AB');
+  await act(async () => { toggle('A').click(); });
+  check('Meerdere routes: volle namen bij aanwijzen', multi.title === 'Rotterdam · Den Haag · Amsterdam Centrum');
+  check('Eén route: volle naam, niet op één regel samengevoegd', !cellsOf('Ad')[0].querySelector('.rr-multi-routes'));
   check('Geen scheidingslijnen tussen chauffeurs: per chauffeur naam + 5 vakjes', rows().children.length === 2 * 6);
   check('Ad woensdag niet ziek', cellsOf('Ad')[2].textContent !== 'Ziek');
   check('Ziekmelding staat in de lijst rechts', [...w.document.querySelectorAll('strong')].some(e => e.textContent.trim() === 'Ziek'));
