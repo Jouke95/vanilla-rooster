@@ -66,7 +66,7 @@ test('Feestdagen in de kerstweek van 2026', async t => {
   check('Knop toepassen stuurt skip_days [4]', calls.slice(n).some(c => c.includes('"only_if_new":false') && c.includes('"skip_days":[4]')));
 
   // Gecombineerde print
-  await act(async () => { byText('Print chauffeurs + magazijn', 'button')[0].click(); }); await tick(); await tick();
+  await act(async () => { byText('Print alle teams', 'button')[0].click(); }); await tick(); await tick();
   check('Print: kop toont "1e Kerstdag"', printed && printed.includes('1e Kerstdag'));
 
   await check.report(t);

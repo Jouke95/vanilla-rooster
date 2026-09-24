@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const { setupApp, checker } = require('./setup');
 
-test('Gecombineerde print chauffeurs + magazijn', async t => {
+test('Gecombineerde print van alle teams', async t => {
   const { w, text, byText, tick, act, start } = setupApp({ extraRoutes: [{ id: 12, day_index: 4, code: 'Zeeland', driver_id: null, driver_name: null }] });
   const check = checker();
   let printed = null;
@@ -22,14 +22,15 @@ test('Gecombineerde print chauffeurs + magazijn', async t => {
   await start();
   await act(async () => { byText('Magazijn', 'button')[0].click(); }); await tick();
   check('Geen printweergave vóór klikken', !w.document.querySelector('.rr-print-only'));
-  await act(async () => { byText('Print chauffeurs + magazijn', 'button')[0].click(); }); await tick(); await tick();
+  await act(async () => { byText('Print alle teams', 'button')[0].click(); }); await tick(); await tick();
   check('window.print() aangeroepen', !!printed && !!printed.rows);
   const row = name => printed.rows.find(r => r[0] === name);
   const names = printed.rows.map(r => r[0]);
   console.log('     ' + printed.title);
   printed.rows.forEach(r => console.log('     | ' + r.map(c => (c || '').padEnd(16)).join('| ')));
   check('Titel met weeknummer', /^Weekrooster week \d+ · /.test(printed.title));
-  check('Volgorde: Chauffeurs, Ad, Bert, Niet toegewezen, Magazijn, Bert, Cor', JSON.stringify(names.slice(1)) === JSON.stringify(['Chauffeurs','Ad','Bert','Niet toegewezen','Magazijn','Bert','Cor']));
+  check('Volgorde: Chauffeurs, Ad, Bert, Niet toegewezen, Magazijn, Bert, Cor, Productie, Eva', JSON.stringify(names.slice(1)) === JSON.stringify(['Chauffeurs','Ad','Bert','Niet toegewezen','Magazijn','Bert','Cor','Productie','Eva']));
+  check('Eva (productie) woensdag: 09:00–16:30', row('Eva')[3] === '09:00–16:30');
   check('Bert staat in beide groepen', names.filter(n => n === 'Bert').length === 2);
   check('Ad maandag: We Supply', row('Ad')[1] === 'We Supply');
   const bertRows = printed.rows.filter(r => r[0] === 'Bert');
@@ -43,11 +44,12 @@ test('Gecombineerde print chauffeurs + magazijn', async t => {
   const bertColors = printed.rows.map((r, i) => r[0] === 'Bert' ? printed.colors[i] : null).filter(Boolean);
   check('Ad maandag (rijdt) lichtgroen', colorsOf('Ad')[1] === 'rgb(205, 235, 197)');
   check('Bert magazijn dinsdag lichtblauw', bertColors[1][2] === 'rgb(201, 226, 248)');
+  check('Eva productie woensdag lichtgeel', colorsOf('Eva')[3] === 'rgb(255, 240, 160)');
   check('Cor woensdag vakantie oranje', colorsOf('Cor')[3] === 'rgb(255, 184, 102)');
   check('Ad dinsdag (werkt niet) wit met streepje', row('Ad')[2] === '–' && colorsOf('Ad')[2] === 'rgb(255, 255, 255)');
   check('Print: tekst in de vakjes 12px en vet', printed.cellFont && printed.cellFont.size === '12px' && printed.cellFont.weight === '700');
   check('Print staand A4', printed.css.includes('size: A4 portrait'));
-  check('Legenda met Chauffeur, Magazijn, Vakantie/vrij, Ziek, Niet beschikbaar', ['Chauffeur', 'Magazijn', 'Vakantie/vrij', 'Ziek', 'Niet beschikbaar'].every(l => printed.legend.includes(l)));
+  check('Legenda met Chauffeur, Magazijn, Productie, Vakantie/vrij, Ziek, Niet beschikbaar', ['Chauffeur', 'Magazijn', 'Productie', 'Vakantie/vrij', 'Ziek', 'Niet beschikbaar'].every(l => printed.legend.includes(l)));
   check('Tabbladinhoud verborgen tijdens printen', printed.tabHidden);
   check('Printweergave weer weg na printen', !w.document.querySelector('.rr-print-only'));
   check('Gewone tab-inhoud weer zichtbaar', w.document.getElementById('root').firstChild.children[1].className === '');

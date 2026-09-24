@@ -31,12 +31,13 @@ app.post('/api/drivers', async (req, res) => {
   if (!name) return res.status(400).json({ error: 'name is verplicht' });
   const is_driver = req.body.is_driver === undefined ? 1 : (req.body.is_driver ? 1 : 0);
   const is_warehouse = req.body.is_warehouse ? 1 : 0;
+  const is_production = req.body.is_production ? 1 : 0;
   try {
     const result = await db.execute({
-      sql: 'INSERT INTO drivers (name, is_driver, is_warehouse) VALUES (?, ?, ?)',
-      args: [name, is_driver, is_warehouse],
+      sql: 'INSERT INTO drivers (name, is_driver, is_warehouse, is_production) VALUES (?, ?, ?, ?)',
+      args: [name, is_driver, is_warehouse, is_production],
     });
-    res.status(201).json({ id: Number(result.lastInsertRowid), name, is_driver, is_warehouse });
+    res.status(201).json({ id: Number(result.lastInsertRowid), name, is_driver, is_warehouse, is_production });
   } catch (err) {
     if (String(err.message).includes('UNIQUE')) {
       return res.status(400).json({ error: 'naam bestaat al' });
@@ -45,7 +46,7 @@ app.post('/api/drivers', async (req, res) => {
   }
 });
 
-// Teamlidmaatschap aanpassen (chauffeur en/of magazijn)
+// Teamlidmaatschap aanpassen (chauffeur, magazijn en/of productie)
 app.patch('/api/drivers/:id', async (req, res) => {
   const existingResult = await db.execute({ sql: 'SELECT * FROM drivers WHERE id = ?', args: [req.params.id] });
   const existing = existingResult.rows[0];
@@ -53,17 +54,20 @@ app.patch('/api/drivers/:id', async (req, res) => {
 
   const is_driver = req.body.is_driver !== undefined ? (req.body.is_driver ? 1 : 0) : existing.is_driver;
   const is_warehouse = req.body.is_warehouse !== undefined ? (req.body.is_warehouse ? 1 : 0) : existing.is_warehouse;
+  const is_production = req.body.is_production !== undefined ? (req.body.is_production ? 1 : 0) : existing.is_production;
   await db.execute({
-    sql: 'UPDATE drivers SET is_driver = ?, is_warehouse = ? WHERE id = ?',
-    args: [is_driver, is_warehouse, req.params.id],
+    sql: 'UPDATE drivers SET is_driver = ?, is_warehouse = ?, is_production = ? WHERE id = ?',
+    args: [is_driver, is_warehouse, is_production, req.params.id],
   });
-  res.json({ id: Number(req.params.id), name: existing.name, is_driver, is_warehouse });
+  res.json({ id: Number(req.params.id), name: existing.name, is_driver, is_warehouse, is_production });
 });
 
 app.delete('/api/drivers/:id', async (req, res) => {
   // Expliciet verwijderen: ON DELETE CASCADE werkt alleen als foreign_keys aan staat op de verbinding
   await db.execute({ sql: 'DELETE FROM warehouse_shifts WHERE driver_id = ?', args: [req.params.id] });
   await db.execute({ sql: 'DELETE FROM warehouse_templates WHERE driver_id = ?', args: [req.params.id] });
+  await db.execute({ sql: 'DELETE FROM production_shifts WHERE driver_id = ?', args: [req.params.id] });
+  await db.execute({ sql: 'DELETE FROM production_templates WHERE driver_id = ?', args: [req.params.id] });
   await db.execute({ sql: 'DELETE FROM route_templates WHERE driver_id = ?', args: [req.params.id] });
   await db.execute({ sql: 'DELETE FROM drivers WHERE id = ?', args: [req.params.id] });
   res.status(204).send();
@@ -244,18 +248,6 @@ function notAwayClause(driverColumn) {
       )`;
 }
 
-app.get('/api/warehouse-shifts', async (req, res) => {
-  const { week_key } = req.query;
-  if (!week_key) {
-    return res.status(400).json({ error: 'week_key is verplicht (bijv. ?week_key=2026-09-15)' });
-  }
-  const result = await db.execute({
-    sql: 'SELECT id, day_index, driver_id, start_time, end_time FROM warehouse_shifts WHERE week_key = ?',
-    args: [week_key],
-  });
-  res.json(result.rows);
-});
-
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 // skip_days: dagen (0-4) die het standaardrooster overslaat, zoals feestdagen. Levert een veilig SQL-stukje op.
@@ -264,97 +256,115 @@ function skipDaysClause(skipDays, column) {
   return days.length ? ` AND ${column} NOT IN (${days.join(', ')})` : '';
 }
 
-// Dienst aanmaken of de tijden van een bestaande dienst aanpassen
-app.post('/api/warehouse-shifts', async (req, res) => {
-  const { week_key, day_index, driver_id, start_time, end_time } = req.body;
-  if (!week_key || day_index === undefined || !driver_id) {
-    return res.status(400).json({ error: 'week_key, day_index en driver_id zijn verplicht' });
-  }
-  if (!TIME_PATTERN.test(start_time) || !TIME_PATTERN.test(end_time) || start_time >= end_time) {
-    return res.status(400).json({ error: 'geldige start_time en end_time (HH:MM, start vóór eind) zijn verplicht' });
-  }
-  await db.execute({
-    sql: `INSERT INTO warehouse_shifts (week_key, day_index, driver_id, start_time, end_time) VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT (week_key, day_index, driver_id) DO UPDATE SET start_time = excluded.start_time, end_time = excluded.end_time`,
-    args: [week_key, day_index, driver_id, start_time, end_time],
-  });
-  res.status(201).json({ week_key, day_index, driver_id, start_time, end_time });
-});
+// Teams die in diensten werken (met begin- en eindtijd). Elk team heeft eigen tabellen
+// <team>_shifts, <team>_templates en <team>_weeks en eigen adressen /api/<team>-shifts en /api/<team>-templates.
+const SHIFT_TEAMS = { warehouse: 'is_warehouse', production: 'is_production' };
 
-// Standaardrooster invullen voor iedereen in het magazijnteam die die week nog geen diensten heeft.
-// Met only_if_new gebeurt dat alleen de eerste keer dat de week wordt geopend.
-app.post('/api/warehouse-shifts/apply-template', async (req, res) => {
-  const { week_key, only_if_new, skip_days } = req.body;
-  if (!week_key) return res.status(400).json({ error: 'week_key is verplicht' });
-  // Zonder standaardroosters niets markeren, anders krijgt deze week later nooit meer het standaardrooster
-  const templateCount = await db.execute('SELECT COUNT(*) AS n FROM warehouse_templates');
-  if (Number(templateCount.rows[0].n) === 0) return res.json({ applied: false });
-  const marked = await db.execute({ sql: 'INSERT OR IGNORE INTO warehouse_weeks (week_key) VALUES (?)', args: [week_key] });
-  if (only_if_new && marked.rowsAffected === 0) return res.json({ applied: false });
-  await db.execute({
-    sql: `INSERT OR IGNORE INTO warehouse_shifts (week_key, day_index, driver_id, start_time, end_time)
-          SELECT ?, t.day_index, t.driver_id, t.start_time, t.end_time
-          FROM warehouse_templates t
-          JOIN drivers d ON d.id = t.driver_id
-          WHERE d.is_warehouse = 1
-            AND t.driver_id NOT IN (SELECT driver_id FROM warehouse_shifts WHERE week_key = ?)${skipDaysClause(skip_days, 't.day_index')}`,
-    args: [week_key, week_key],
-  });
-  res.json({ applied: true });
-});
-
-app.delete('/api/warehouse-shifts', async (req, res) => {
-  const { week_key, day_index, driver_id } = req.body;
-  if (!week_key || day_index === undefined || !driver_id) {
-    return res.status(400).json({ error: 'week_key, day_index en driver_id zijn verplicht' });
-  }
-  await db.execute({
-    sql: 'DELETE FROM warehouse_shifts WHERE week_key = ? AND day_index = ? AND driver_id = ?',
-    args: [week_key, day_index, driver_id],
-  });
-  res.status(204).send();
-});
-
-// Vervangt de diensten van één persoon in een week door diens standaardrooster
-app.post('/api/warehouse-shifts/apply-template/:driverId', async (req, res) => {
-  const { week_key, skip_days } = req.body;
-  if (!week_key) return res.status(400).json({ error: 'week_key is verplicht' });
-  const driverId = Number(req.params.driverId);
-  await db.batch([
-    { sql: 'DELETE FROM warehouse_shifts WHERE week_key = ? AND driver_id = ?', args: [week_key, driverId] },
-    {
-      sql: `INSERT INTO warehouse_shifts (week_key, day_index, driver_id, start_time, end_time)
-            SELECT ?, day_index, driver_id, start_time, end_time FROM warehouse_templates WHERE driver_id = ?${skipDaysClause(skip_days, 'day_index')}`,
-      args: [week_key, driverId],
-    },
-  ], 'write');
-  res.json({ applied: true });
-});
-
-app.get('/api/warehouse-templates', async (req, res) => {
-  const result = await db.execute('SELECT driver_id, day_index, start_time, end_time FROM warehouse_templates ORDER BY driver_id, day_index');
-  res.json(result.rows);
-});
-
-// Vervangt het hele standaardrooster van één persoon
-app.put('/api/warehouse-templates/:driverId', async (req, res) => {
-  const days = Array.isArray(req.body.days) ? req.body.days : null;
-  if (!days) return res.status(400).json({ error: 'days is verplicht' });
-  for (const d of days) {
-    if (!(d.day_index >= 0 && d.day_index <= 4) || !TIME_PATTERN.test(d.start_time) || !TIME_PATTERN.test(d.end_time) || d.start_time >= d.end_time) {
-      return res.status(400).json({ error: 'elke dag heeft een day_index (0-4) en geldige start_time en end_time nodig' });
+for (const [team, teamColumn] of Object.entries(SHIFT_TEAMS)) {
+  app.get(`/api/${team}-shifts`, async (req, res) => {
+    const { week_key } = req.query;
+    if (!week_key) {
+      return res.status(400).json({ error: 'week_key is verplicht (bijv. ?week_key=2026-09-15)' });
     }
-  }
-  const driverId = Number(req.params.driverId);
-  await db.batch([
-    { sql: 'DELETE FROM warehouse_templates WHERE driver_id = ?', args: [driverId] },
-    ...days.map(d => ({
-      sql: 'INSERT INTO warehouse_templates (driver_id, day_index, start_time, end_time) VALUES (?, ?, ?, ?)',
-      args: [driverId, d.day_index, d.start_time, d.end_time],
-    })),
-  ], 'write');
-  res.json(days.map(d => ({ driver_id: driverId, day_index: d.day_index, start_time: d.start_time, end_time: d.end_time })));
-});
+    const result = await db.execute({
+      sql: `SELECT id, day_index, driver_id, start_time, end_time FROM ${team}_shifts WHERE week_key = ?`,
+      args: [week_key],
+    });
+    res.json(result.rows);
+  });
+
+  // Dienst aanmaken of de tijden van een bestaande dienst aanpassen
+  app.post(`/api/${team}-shifts`, async (req, res) => {
+    const { week_key, day_index, driver_id, start_time, end_time } = req.body;
+    if (!week_key || day_index === undefined || !driver_id) {
+      return res.status(400).json({ error: 'week_key, day_index en driver_id zijn verplicht' });
+    }
+    if (!TIME_PATTERN.test(start_time) || !TIME_PATTERN.test(end_time) || start_time >= end_time) {
+      return res.status(400).json({ error: 'geldige start_time en end_time (HH:MM, start vóór eind) zijn verplicht' });
+    }
+    await db.execute({
+      sql: `INSERT INTO ${team}_shifts (week_key, day_index, driver_id, start_time, end_time) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (week_key, day_index, driver_id) DO UPDATE SET start_time = excluded.start_time, end_time = excluded.end_time`,
+      args: [week_key, day_index, driver_id, start_time, end_time],
+    });
+    res.status(201).json({ week_key, day_index, driver_id, start_time, end_time });
+  });
+
+  // Standaardrooster invullen voor iedereen in het team die die week nog geen diensten heeft.
+  // Met only_if_new gebeurt dat alleen de eerste keer dat de week wordt geopend.
+  app.post(`/api/${team}-shifts/apply-template`, async (req, res) => {
+    const { week_key, only_if_new, skip_days } = req.body;
+    if (!week_key) return res.status(400).json({ error: 'week_key is verplicht' });
+    // Zonder standaardroosters niets markeren, anders krijgt deze week later nooit meer het standaardrooster
+    const templateCount = await db.execute(`SELECT COUNT(*) AS n FROM ${team}_templates`);
+    if (Number(templateCount.rows[0].n) === 0) return res.json({ applied: false });
+    const marked = await db.execute({ sql: `INSERT OR IGNORE INTO ${team}_weeks (week_key) VALUES (?)`, args: [week_key] });
+    if (only_if_new && marked.rowsAffected === 0) return res.json({ applied: false });
+    await db.execute({
+      sql: `INSERT OR IGNORE INTO ${team}_shifts (week_key, day_index, driver_id, start_time, end_time)
+            SELECT ?, t.day_index, t.driver_id, t.start_time, t.end_time
+            FROM ${team}_templates t
+            JOIN drivers d ON d.id = t.driver_id
+            WHERE d.${teamColumn} = 1
+              AND t.driver_id NOT IN (SELECT driver_id FROM ${team}_shifts WHERE week_key = ?)${skipDaysClause(skip_days, 't.day_index')}`,
+      args: [week_key, week_key],
+    });
+    res.json({ applied: true });
+  });
+
+  app.delete(`/api/${team}-shifts`, async (req, res) => {
+    const { week_key, day_index, driver_id } = req.body;
+    if (!week_key || day_index === undefined || !driver_id) {
+      return res.status(400).json({ error: 'week_key, day_index en driver_id zijn verplicht' });
+    }
+    await db.execute({
+      sql: `DELETE FROM ${team}_shifts WHERE week_key = ? AND day_index = ? AND driver_id = ?`,
+      args: [week_key, day_index, driver_id],
+    });
+    res.status(204).send();
+  });
+
+  // Vervangt de diensten van één persoon in een week door diens standaardrooster
+  app.post(`/api/${team}-shifts/apply-template/:driverId`, async (req, res) => {
+    const { week_key, skip_days } = req.body;
+    if (!week_key) return res.status(400).json({ error: 'week_key is verplicht' });
+    const driverId = Number(req.params.driverId);
+    await db.batch([
+      { sql: `DELETE FROM ${team}_shifts WHERE week_key = ? AND driver_id = ?`, args: [week_key, driverId] },
+      {
+        sql: `INSERT INTO ${team}_shifts (week_key, day_index, driver_id, start_time, end_time)
+              SELECT ?, day_index, driver_id, start_time, end_time FROM ${team}_templates WHERE driver_id = ?${skipDaysClause(skip_days, 'day_index')}`,
+        args: [week_key, driverId],
+      },
+    ], 'write');
+    res.json({ applied: true });
+  });
+
+  app.get(`/api/${team}-templates`, async (req, res) => {
+    const result = await db.execute(`SELECT driver_id, day_index, start_time, end_time FROM ${team}_templates ORDER BY driver_id, day_index`);
+    res.json(result.rows);
+  });
+
+  // Vervangt het hele standaardrooster van één persoon
+  app.put(`/api/${team}-templates/:driverId`, async (req, res) => {
+    const days = Array.isArray(req.body.days) ? req.body.days : null;
+    if (!days) return res.status(400).json({ error: 'days is verplicht' });
+    for (const d of days) {
+      if (!(d.day_index >= 0 && d.day_index <= 4) || !TIME_PATTERN.test(d.start_time) || !TIME_PATTERN.test(d.end_time) || d.start_time >= d.end_time) {
+        return res.status(400).json({ error: 'elke dag heeft een day_index (0-4) en geldige start_time en end_time nodig' });
+      }
+    }
+    const driverId = Number(req.params.driverId);
+    await db.batch([
+      { sql: `DELETE FROM ${team}_templates WHERE driver_id = ?`, args: [driverId] },
+      ...days.map(d => ({
+        sql: `INSERT INTO ${team}_templates (driver_id, day_index, start_time, end_time) VALUES (?, ?, ?, ?)`,
+        args: [driverId, d.day_index, d.start_time, d.end_time],
+      })),
+    ], 'write');
+    res.json(days.map(d => ({ driver_id: driverId, day_index: d.day_index, start_time: d.start_time, end_time: d.end_time })));
+  });
+}
 
 // Express 5 stuurt fouten uit async handlers hierheen; geef JSON terug i.p.v. een HTML-foutpagina
 app.use((err, req, res, next) => {

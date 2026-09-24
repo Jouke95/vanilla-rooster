@@ -19,15 +19,16 @@ function mondayOfThisWeek() {
   return monday;
 }
 
-// Standaard testdata: Ad is chauffeur, Bert zit in beide teams, Cor alleen in het magazijn
+// Standaard testdata: Ad is chauffeur, Bert chauffeur en magazijn, Cor alleen magazijn, Eva alleen productie
 function defaultDb(monday) {
   const wednesday = new Date(monday);
   wednesday.setDate(monday.getDate() + 2);
   return {
     drivers: [
-      { id: 1, name: 'Ad', is_driver: 1, is_warehouse: 0 },
-      { id: 2, name: 'Bert', is_driver: 1, is_warehouse: 1 },
-      { id: 3, name: 'Cor', is_driver: 0, is_warehouse: 1 },
+      { id: 1, name: 'Ad', is_driver: 1, is_warehouse: 0, is_production: 0 },
+      { id: 2, name: 'Bert', is_driver: 1, is_warehouse: 1, is_production: 0 },
+      { id: 3, name: 'Cor', is_driver: 0, is_warehouse: 1, is_production: 0 },
+      { id: 5, name: 'Eva', is_driver: 0, is_warehouse: 0, is_production: 1 },
     ],
     vacations: [{ id: 1, driver_id: 3, driver_name: 'Cor', start_date: iso(wednesday), end_date: iso(wednesday), type: 'vacation' }],
     routes: [
@@ -39,6 +40,8 @@ function defaultDb(monday) {
       { id: 2, day_index: 0, driver_id: 3, start_time: null, end_time: null },
     ],
     templates: [{ driver_id: 3, day_index: 1, start_time: '09:00', end_time: '13:00' }],
+    productionShifts: [{ id: 7, day_index: 2, driver_id: 5, start_time: '09:00', end_time: '16:30' }],
+    productionTemplates: [],
     routeTemplates: [{ day_index: 1, code: 'Vroeg 1', driver_id: 2 }],
   };
 }
@@ -80,6 +83,8 @@ function setupApp({ extraRoutes = [] } = {}) {
     if (url.startsWith('/api/routes?')) return json(db.routes);
     if (url.startsWith('/api/warehouse-shifts?')) return json(db.shifts);
     if (url === '/api/warehouse-templates') return json(db.templates);
+    if (url.startsWith('/api/production-shifts?')) return json(db.productionShifts);
+    if (url === '/api/production-templates') return json(db.productionTemplates);
     if (url === '/api/route-templates') return json(db.routeTemplates);
     if (url.startsWith('/api/route-templates/') && method === 'PUT') {
       const id = +url.split('/').pop();
@@ -87,9 +92,9 @@ function setupApp({ extraRoutes = [] } = {}) {
       db.routeTemplates = [...keep, ...body.routes.map(r => ({ ...r, driver_id: id }))];
       return json(db.routeTemplates);
     }
-    if (url.startsWith('/api/warehouse-templates/') && method === 'PUT') return json(body.days.map(d => ({ driver_id: +url.split('/').pop(), ...d })));
-    if (url.startsWith('/api/warehouse-shifts/apply-template')) return json({ applied: true });
-    if (url === '/api/drivers' && method === 'POST') return json({ id: 99, name: body.name, is_driver: body.is_driver, is_warehouse: body.is_warehouse });
+    if (/^\/api\/(warehouse|production)-templates\//.test(url) && method === 'PUT') return json(body.days.map(d => ({ driver_id: +url.split('/').pop(), ...d })));
+    if (/^\/api\/(warehouse|production)-shifts\/apply-template/.test(url)) return json({ applied: true });
+    if (url === '/api/drivers' && method === 'POST') return json({ id: 99, ...body });
     if (url.startsWith('/api/drivers/') && method === 'PATCH') { const d = db.drivers.find(x => x.id === +url.split('/').pop()); return json({ ...d, ...body }); }
     if (url === '/api/vacations' && method === 'POST') return json({ id: 50, ...body });
     return json({});

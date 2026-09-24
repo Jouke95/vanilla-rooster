@@ -71,6 +71,33 @@ async function initSchema() {
       week_key TEXT PRIMARY KEY
     );
 
+    -- Productie: zelfde opbouw als de magazijntabellen
+    CREATE TABLE IF NOT EXISTS production_shifts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      week_key TEXT NOT NULL,
+      day_index INTEGER NOT NULL,
+      driver_id INTEGER NOT NULL,
+      start_time TEXT,
+      end_time TEXT,
+      FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
+      UNIQUE (week_key, day_index, driver_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS production_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      driver_id INTEGER NOT NULL,
+      day_index INTEGER NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
+      UNIQUE (driver_id, day_index)
+    );
+
+    -- Weken waarin het standaardrooster van productie al is ingevuld
+    CREATE TABLE IF NOT EXISTS production_weeks (
+      week_key TEXT PRIMARY KEY
+    );
+
     -- Instellingen, o.a. de scrypt-hash van het gedeelde wachtwoord (key 'password_hash')
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
@@ -88,6 +115,7 @@ async function initSchema() {
   await addColumnIfMissing('vacations', 'type', "TEXT NOT NULL DEFAULT 'vacation'");
   await addColumnIfMissing('drivers', 'is_driver', 'INTEGER NOT NULL DEFAULT 1');
   await addColumnIfMissing('drivers', 'is_warehouse', 'INTEGER NOT NULL DEFAULT 0');
+  await addColumnIfMissing('drivers', 'is_production', 'INTEGER NOT NULL DEFAULT 0');
   await addColumnIfMissing('warehouse_shifts', 'start_time', 'TEXT');
   await addColumnIfMissing('warehouse_shifts', 'end_time', 'TEXT');
 }

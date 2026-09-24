@@ -13,7 +13,7 @@ test('Teams, magazijnrooster, uren en standaardrooster', async t => {
   check('Chauffeurs-tab toont alleen Ad en Bert in de personenbalk', JSON.stringify(chauffeurChips) === '["Ad","Bert"]');
   check('Chip van Bert toont "+ magazijn"', text().includes('+ magazijn'));
   check('Chauffeurs-tab: waarschuwing "⚠ magazijn" bij Bert (dubbel op dinsdag)', text().includes('⚠ magazijn'));
-  check('Keuzelijst "+ iemand uit magazijn toevoegen" met Cor', byText('Cor', 'option').length === 1);
+  check('Keuzelijst "+ iemand uit een ander team toevoegen" met Cor en Eva', byText('Cor', 'option').length === 1 && byText('Eva', 'option').length === 1);
 
   // Naar Magazijn
   await act(async () => { byText('Magazijn', 'button')[0].click(); }); await tick();
@@ -86,7 +86,7 @@ test('Teams, magazijnrooster, uren en standaardrooster', async t => {
   check('Knop past standaardrooster toe (only_if_new=false)', calls.some(c => c.startsWith('POST /api/warehouse-shifts/apply-template') && c.includes('"only_if_new":false')));
 
   // Ad koppelen aan magazijn via keuzelijst
-  const sel = [...w.document.querySelectorAll('select')].find(s => s.textContent.includes('iemand uit chauffeurs'));
+  const sel = [...w.document.querySelectorAll('select')].find(s => s.textContent.includes('iemand uit een ander team'));
   await act(async () => { sel.value = '1'; sel.dispatchEvent(new w.Event('change', { bubbles: true })); }); await tick();
   check('Ad koppelen stuurt PATCH is_warehouse=1', calls.some(c => c.startsWith('PATCH /api/drivers/1') && c.includes('"is_warehouse":1')));
   check('Ad staat nu in het magazijn', [...w.document.querySelectorAll('.rr-driver-chip')].some(e => e.firstChild.textContent === 'Ad'));
@@ -95,7 +95,7 @@ test('Teams, magazijnrooster, uren en standaardrooster', async t => {
   const input = w.document.querySelector('.rr-input');
   await act(async () => { setVal.call(input, 'Dirk'); input.dispatchEvent(new w.Event('input', { bubbles: true })); });
   await act(async () => { byText('+ toevoegen', 'button')[0].click(); }); await tick();
-  check('Nieuwe persoon krijgt is_warehouse=1, is_driver=0', calls.some(c => c.startsWith('POST /api/drivers') && c.includes('"is_driver":0,"is_warehouse":1')));
+  check('Nieuwe persoon krijgt is_warehouse=1, is_driver=0, is_production=0', calls.some(c => c.startsWith('POST /api/drivers') && c.includes('"is_driver":0,"is_warehouse":1,"is_production":0')));
 
   // Rechtsklik -> niet beschikbaar
   const cells2 = cells();
