@@ -64,6 +64,7 @@ app.delete('/api/drivers/:id', async (req, res) => {
   // Expliciet verwijderen: ON DELETE CASCADE werkt alleen als foreign_keys aan staat op de verbinding
   await db.execute({ sql: 'DELETE FROM warehouse_shifts WHERE driver_id = ?', args: [req.params.id] });
   await db.execute({ sql: 'DELETE FROM warehouse_templates WHERE driver_id = ?', args: [req.params.id] });
+  await db.execute({ sql: 'DELETE FROM route_templates WHERE driver_id = ?', args: [req.params.id] });
   await db.execute({ sql: 'DELETE FROM drivers WHERE id = ?', args: [req.params.id] });
   res.status(204).send();
 });
@@ -151,6 +152,87 @@ app.delete('/api/routes/:id', async (req, res) => {
   await db.execute({ sql: 'DELETE FROM routes WHERE id = ?', args: [req.params.id] });
   res.status(204).send();
 });
+
+app.get('/api/route-templates', async (req, res) => {
+  const result = await db.execute('SELECT day_index, code, driver_id FROM route_templates ORDER BY day_index, code');
+  res.json(result.rows);
+});
+
+// Vervangt de vaste routes van één chauffeur. Een route die eerst bij iemand anders stond, gaat over naar deze chauffeur.
+app.put('/api/route-templates/:driverId', async (req, res) => {
+  const routes = Array.isArray(req.body.routes) ? req.body.routes : null;
+  if (!routes) return res.status(400).json({ error: 'routes is verplicht' });
+  for (const r of routes) {
+    if (!(Number.isInteger(r.day_index) && r.day_index >= 0 && r.day_index <= 4) || typeof r.code !== 'string' || !r.code) {
+      return res.status(400).json({ error: 'elke route heeft een day_index (0-4) en code nodig' });
+    }
+  }
+  const driverId = Number(req.params.driverId);
+  await db.batch([
+    { sql: 'DELETE FROM route_templates WHERE driver_id = ?', args: [driverId] },
+    ...routes.map(r => ({
+      sql: `INSERT INTO route_templates (day_index, code, driver_id) VALUES (?, ?, ?)
+            ON CONFLICT (day_index, code) DO UPDATE SET driver_id = excluded.driver_id`,
+      args: [r.day_index, r.code, driverId],
+    })),
+  ], 'write');
+  const result = await db.execute('SELECT day_index, code, driver_id FROM route_templates ORDER BY day_index, code');
+  res.json(result.rows);
+});
+
+// Vult routes van een week zonder (geldige) chauffeur met de vaste chauffeur uit het standaardrooster.
+// Slaat over: dagen in skip_days (feestdagen), chauffeurs die niet meer in het team zitten en
+// chauffeurs met vakantie, niet beschikbaar of ziek op die dag. Met de hand toegewezen routes blijven staan.
+app.post('/api/routes/apply-template', async (req, res) => {
+  const { week_key, skip_days } = req.body;
+  if (!week_key) return res.status(400).json({ error: 'week_key is verplicht' });
+  const templateDriver = `
+    SELECT t.driver_id FROM route_templates t
+    JOIN drivers d ON d.id = t.driver_id
+    WHERE t.day_index = routes.day_index AND t.code = routes.code AND d.is_driver = 1
+      AND ${notAwayClause('t.driver_id')}`;
+  const result = await db.execute({
+    sql: `UPDATE routes SET driver_id = (${templateDriver})
+          WHERE week_key = ?
+            AND (driver_id IS NULL OR driver_id NOT IN (SELECT id FROM drivers WHERE is_driver = 1))
+            AND EXISTS (${templateDriver})${skipDaysClause(skip_days, 'day_index')}`,
+    args: [week_key],
+  });
+  res.json({ updated: result.rowsAffected });
+});
+
+// Alle routes van een week terug naar "niet toegewezen"; de routes zelf blijven bestaan
+app.post('/api/routes/clear', async (req, res) => {
+  const { week_key } = req.body;
+  if (!week_key) return res.status(400).json({ error: 'week_key is verplicht' });
+  const result = await db.execute({ sql: 'UPDATE routes SET driver_id = NULL WHERE week_key = ?', args: [week_key] });
+  res.json({ updated: result.rowsAffected });
+});
+
+// Zet de vaste routes van één chauffeur in deze week op zijn naam, ook als er al iemand anders op stond.
+// Niet op feestdagen (skip_days) of als hij die dag vakantie heeft, niet beschikbaar of ziek is.
+app.post('/api/routes/apply-template/:driverId', async (req, res) => {
+  const { week_key, skip_days } = req.body;
+  if (!week_key) return res.status(400).json({ error: 'week_key is verplicht' });
+  const driverId = Number(req.params.driverId);
+  const result = await db.execute({
+    sql: `UPDATE routes SET driver_id = ?
+          WHERE week_key = ?
+            AND EXISTS (SELECT 1 FROM route_templates t WHERE t.driver_id = ? AND t.day_index = routes.day_index AND t.code = routes.code)
+            AND ${notAwayClause('?')}${skipDaysClause(skip_days, 'day_index')}`,
+    args: [driverId, week_key, driverId, driverId],
+  });
+  res.json({ updated: result.rowsAffected });
+});
+
+// SQL-voorwaarde: de chauffeur heeft op de dag van de route geen vakantie, niet-beschikbaar of ziekmelding
+function notAwayClause(driverColumn) {
+  return `NOT EXISTS (
+        SELECT 1 FROM vacations v
+        WHERE v.driver_id = ${driverColumn}
+          AND date(routes.week_key, '+' || routes.day_index || ' days') BETWEEN v.start_date AND v.end_date
+      )`;
+}
 
 app.get('/api/warehouse-shifts', async (req, res) => {
   const { week_key } = req.query;

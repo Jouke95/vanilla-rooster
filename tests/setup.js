@@ -39,6 +39,7 @@ function defaultDb(monday) {
       { id: 2, day_index: 0, driver_id: 3, start_time: null, end_time: null },
     ],
     templates: [{ driver_id: 3, day_index: 1, start_time: '09:00', end_time: '13:00' }],
+    routeTemplates: [{ day_index: 1, code: 'Vroeg 1', driver_id: 2 }],
   };
 }
 
@@ -79,6 +80,13 @@ function setupApp({ extraRoutes = [] } = {}) {
     if (url.startsWith('/api/routes?')) return json(db.routes);
     if (url.startsWith('/api/warehouse-shifts?')) return json(db.shifts);
     if (url === '/api/warehouse-templates') return json(db.templates);
+    if (url === '/api/route-templates') return json(db.routeTemplates);
+    if (url.startsWith('/api/route-templates/') && method === 'PUT') {
+      const id = +url.split('/').pop();
+      const keep = db.routeTemplates.filter(t => t.driver_id !== id && !body.routes.some(r => r.day_index === t.day_index && r.code === t.code));
+      db.routeTemplates = [...keep, ...body.routes.map(r => ({ ...r, driver_id: id }))];
+      return json(db.routeTemplates);
+    }
     if (url.startsWith('/api/warehouse-templates/') && method === 'PUT') return json(body.days.map(d => ({ driver_id: +url.split('/').pop(), ...d })));
     if (url.startsWith('/api/warehouse-shifts/apply-template')) return json({ applied: true });
     if (url === '/api/drivers' && method === 'POST') return json({ id: 99, name: body.name, is_driver: body.is_driver, is_warehouse: body.is_warehouse });

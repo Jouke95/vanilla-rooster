@@ -56,6 +56,16 @@ async function initSchema() {
       UNIQUE (driver_id, day_index)
     );
 
+    -- Standaardrooster chauffeurs: per weekdag en vaste route de vaste chauffeur
+    CREATE TABLE IF NOT EXISTS route_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      day_index INTEGER NOT NULL,
+      code TEXT NOT NULL,
+      driver_id INTEGER NOT NULL,
+      FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
+      UNIQUE (day_index, code)
+    );
+
     -- Weken waarin het standaardrooster al is ingevuld
     CREATE TABLE IF NOT EXISTS warehouse_weeks (
       week_key TEXT PRIMARY KEY

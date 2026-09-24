@@ -351,6 +351,8 @@ function UnavailableMenu({ menu, onClose, driverIdByName, vacations, setVacation
 
 function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, vacations, setVacations, reloadKey }) {
   const [rawRoutes, setRawRoutes] = useState([]);
+  const [routeTemplates, setRouteTemplates] = useState([]);
+  const [templatePerson, setTemplatePerson] = useState(null);
   const [warehouseShifts, setWarehouseShifts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [contextMenu, setContextMenu] = useState(null);
@@ -360,6 +362,7 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
   const currentMonday = addWeeks(getMondayOfThisWeek(), weekOffset);
   const currentKey = weekKey(currentMonday);
   const days = groupRoutesByDay(currentMonday, rawRoutes);
+  const holidayDays = days.filter(d => d.holiday).map(d => d.dayIndex);
   const currentFriday = new Date(currentMonday);
   currentFriday.setDate(currentMonday.getDate() + 4);
   const weekLabel = `${formatDayDate(currentMonday)} – ${formatDayDate(currentFriday)}`;
@@ -375,12 +378,14 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
             await api("/api/routes", { method: "POST", body: { week_key: currentKey, day_index: i, code: r.code } });
           }
         }
+        await api("/api/routes/apply-template", { method: "POST", body: { week_key: currentKey, skip_days: holidayDays } });
         routes = await api(`/api/routes?week_key=${currentKey}`);
       }
       const routesWithFixed = routes.map(r => ({ ...r, fixed: isFixedRoute(r.day_index, r.code) }));
       if (!cancelled) { setRawRoutes(routesWithFixed); setLoading(false); }
     }
     loadWeek();
+    api("/api/route-templates").then(rows => { if (!cancelled) setRouteTemplates(rows); });
     api(`/api/warehouse-shifts?week_key=${currentKey}`).then(rows => { if (!cancelled) setWarehouseShifts(rows); });
     return () => { cancelled = true; };
   }, [currentKey, reloadKey]);
@@ -399,14 +404,39 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
   };
 
   const moveRoute = async (routeId, dayIndex, driverName) => {
-    setRawRoutes(prev => prev.map(r => r.id === routeId ? { ...r, day_index: dayIndex, driver_name: driverName || null, fixed: isFixedRoute(dayIndex, r.code) } : r));
+    setRawRoutes(prev => prev.map(r => r.id === routeId ? { ...r, day_index: dayIndex, driver_name: driverName || null, driver_id: driverName ? driverIdByName[driverName] : null, fixed: isFixedRoute(dayIndex, r.code) } : r));
     await api(`/api/routes/${routeId}`, { method: "PATCH", body: { day_index: dayIndex, driver_id: driverName ? driverIdByName[driverName] : null } });
   };
 
   const updateRoute = async (routeId, field, value) => {
-    setRawRoutes(prev => prev.map(r => r.id === routeId ? (field === "driver" ? { ...r, driver_name: value || null } : { ...r, code: value }) : r));
+    setRawRoutes(prev => prev.map(r => r.id === routeId ? (field === "driver" ? { ...r, driver_name: value || null, driver_id: value ? driverIdByName[value] : null } : { ...r, code: value }) : r));
     const body = field === "driver" ? { driver_id: value ? driverIdByName[value] : null } : { code: value };
     await api(`/api/routes/${routeId}`, { method: "PATCH", body });
+  };
+
+  const reloadRoutes = async () => {
+    const routes = await api(`/api/routes?week_key=${currentKey}`);
+    setRawRoutes(routes.map(r => ({ ...r, fixed: isFixedRoute(r.day_index, r.code) })));
+  };
+
+  const saveTemplate = async (person, routes, applyToWeek) => {
+    setRouteTemplates(await api(`/api/route-templates/${person.id}`, { method: "PUT", body: { routes } }));
+    if (applyToWeek) {
+      await api(`/api/routes/apply-template/${person.id}`, { method: "POST", body: { week_key: currentKey, skip_days: holidayDays } });
+      await reloadRoutes();
+    }
+    setTemplatePerson(null);
+  };
+
+  const applyTemplate = async () => {
+    await api("/api/routes/apply-template", { method: "POST", body: { week_key: currentKey, skip_days: holidayDays } });
+    await reloadRoutes();
+  };
+
+  const clearWeek = async () => {
+    if (!window.confirm("Alle routes van deze week terugzetten naar \"Niet toegewezen\"? De routes zelf blijven staan.")) return;
+    setRawRoutes(prev => prev.map(r => ({ ...r, driver_name: null, driver_id: null })));
+    await api("/api/routes/clear", { method: "POST", body: { week_key: currentKey } });
   };
 
   const totalRoutes = days.reduce((sum, d) => sum + d.routes.length, 0);
@@ -491,7 +521,7 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
   gridChildren.push(React.createElement("div", { key: "divider-unassigned", className: unassignedPrintClass, style: { gridColumn: "1 / -1", height: "1px", background: "#C9CDD3", margin: "4px 0" } }));
 
   drivers.forEach(name => {
-    gridChildren.push(React.createElement("div", { key: `drv-${name}`, style: { fontSize: "12.5px", fontWeight: 600, alignSelf: "flex-start", paddingTop: "8px" } }, name));
+    gridChildren.push(React.createElement("div", { key: `drv-${name}`, className: "rr-person-name", onClick: () => setTemplatePerson(driversRaw.find(d => d.id === driverIdByName[name])), title: "Standaardrooster instellen", style: { fontSize: "12.5px", fontWeight: 600, alignSelf: "flex-start", paddingTop: "8px", cursor: "pointer" } }, name));
     days.forEach(day => {
       const onVac = isDriverOnVacation(name, day.isoDate);
       const onUnavail = isDriverUnavailable(name, day.isoDate);
@@ -524,6 +554,7 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
       .rr-driver-x { opacity: 0; transition: opacity 0.12s ease; cursor: pointer; }
       .rr-code-input { font-family: 'IBM Plex Mono', monospace; font-size: 14.5px; font-weight: 600; border: none; background: transparent; outline: none; width: 100%; color: #4A5568; letter-spacing: 0.01em; }
       .rr-add-btn:hover { background: #1B2A4A; color: #EDF0F2; }
+      .rr-person-name:hover { text-decoration: underline; }
       .rr-vac-add-btn:hover { background: #14203a; border-color: #14203a; }
       @media print {
         .no-print { display: none !important; }
@@ -547,6 +578,10 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
           React.createElement("span", { style: { fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#1B2A4A", minWidth: "120px", textAlign: "center" } }, weekLabel, React.createElement("span", { className: "no-print", style: { color: "#5A6472", marginLeft: "6px" } }, weekOffset === 0 ? "(deze week)" : `(week ${getISOWeekNumber(currentMonday)})`)),
           React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(w => w + 1), style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "13px", color: "#1B2A4A", cursor: "pointer" } }, "volgende week →"),
           weekOffset !== 0 && React.createElement("button", { className: "no-print", onClick: () => setWeekOffset(0), style: { border: "none", background: "transparent", fontSize: "12.5px", color: "#5A6472", textDecoration: "underline", cursor: "pointer" } }, "naar vandaag")
+        ),
+        React.createElement("div", { className: "no-print", style: { display: "flex", alignItems: "center", gap: "8px", marginTop: "10px", flexWrap: "wrap" } },
+          React.createElement("button", { onClick: applyTemplate, title: "Vaste chauffeurs invullen bij routes die nog niemand hebben. Toegewezen routes blijven staan.", style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "12.5px", color: "#1B2A4A", cursor: "pointer" } }, "Standaardrooster invullen"),
+          React.createElement("button", { onClick: clearWeek, title: "Alle routes van deze week terug naar niet toegewezen", style: { border: "1px solid #E3B5B2", background: "#FFFFFF", borderRadius: "6px", padding: "5px 11px", fontSize: "12.5px", color: "#A9433F", cursor: "pointer" } }, "Week leegmaken")
         )
       ),
       React.createElement("div", { className: "no-print", style: { display: "flex", gap: "10px" } },
@@ -579,10 +614,11 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
   )
 )
     ),
-    React.createElement(PeopleBar, { team: "is_driver", label: "Chauffeurs:", otherLabel: "magazijn", driversRaw, setDriversRaw, setVacations }),
+    React.createElement(PeopleBar, { team: "is_driver", label: "Chauffeurs:", otherLabel: "magazijn", driversRaw, setDriversRaw, setVacations, onPersonClick: setTemplatePerson }),
     loading && React.createElement("p", { className: "no-print", style: { fontSize: "12px", color: "#8A93A0", marginTop: "8px" } }, "Rooster laden…"),
     React.createElement("p", { className: "no-print", style: { marginTop: "22px", fontSize: "12px", color: "#8A93A0", maxWidth: "520px" } }, "Alles wordt automatisch opgeslagen op de server, ook na een refresh of tussen sessies."),
-    React.createElement(UnavailableMenu, { menu: contextMenu, onClose: () => setContextMenu(null), driverIdByName, vacations, setVacations })
+    React.createElement(UnavailableMenu, { menu: contextMenu, onClose: () => setContextMenu(null), driverIdByName, vacations, setVacations }),
+    templatePerson && React.createElement(RouteTemplateModal, { person: templatePerson, templates: routeTemplates, driversRaw, weekLabel, onSave: (routes, applyToWeek) => saveTemplate(templatePerson, routes, applyToWeek), onClose: () => setTemplatePerson(null) })
   );
 }
 
@@ -617,6 +653,40 @@ function ShiftEditor({ editor, onSave, onRemove, onClose }) {
         React.createElement("button", { disabled: !valid, onClick: () => onSave(start, end), style: { flex: 1, border: "1px solid #1B2A4A", background: "#1B2A4A", color: "#FFFFFF", borderRadius: "5px", padding: "5px 0", fontSize: "12.5px", fontWeight: 600, cursor: valid ? "pointer" : "not-allowed", opacity: valid ? 1 : 0.5 } }, "Opslaan"),
         React.createElement("button", { onClick: onRemove, style: { flex: 1, border: "1px solid #E3B5B2", background: "#FFFFFF", color: "#A9433F", borderRadius: "5px", padding: "5px 0", fontSize: "12.5px", cursor: "pointer" } }, "Werkt niet")
       )
+    )
+  );
+}
+
+// Venster om de vaste routes van één chauffeur in te stellen (per weekdag de vaste routes aanvinken)
+function RouteTemplateModal({ person, templates, driversRaw, weekLabel, onSave, onClose }) {
+  const key = (dayIndex, code) => `${dayIndex}|${code}`;
+  const [checked, setChecked] = useState(() => new Set(templates.filter(t => t.driver_id === person.id).map(t => key(t.day_index, t.code))));
+  const toggle = k => setChecked(prev => { const next = new Set(prev); next.has(k) ? next.delete(k) : next.add(k); return next; });
+  const nameOf = id => (driversRaw.find(d => d.id === id) || {}).name;
+  const save = applyToWeek => onSave(SEED_ROUTES_PER_DAY.flatMap((routes, i) => routes.filter(r => checked.has(key(i, r.code))).map(r => ({ day_index: i, code: r.code }))), applyToWeek);
+
+  return React.createElement("div", { className: "no-print", onClick: onClose, style: { position: "fixed", inset: 0, zIndex: 100, background: "rgba(27,42,74,0.25)", display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" } },
+    React.createElement("div", { onClick: e => e.stopPropagation(), style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", boxShadow: "0 8px 24px rgba(0,0,0,0.18)", padding: "16px 18px", width: "380px", maxWidth: "100%", maxHeight: "calc(100vh - 32px)", overflowY: "auto", boxSizing: "border-box", fontFamily: "'IBM Plex Sans', system-ui, sans-serif", color: "#1B2A4A" } },
+      React.createElement("div", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "16px", fontWeight: 700 } }, `Standaardrooster ${person.name}`),
+      React.createElement("div", { style: { fontSize: "12px", color: "#5A6472", margin: "4px 0 12px" } }, "Vink de vaste routes aan die hij standaard rijdt. Wordt ingevuld in nieuwe weken; weken die al bestaan veranderen niet."),
+      SEED_ROUTES_PER_DAY.map((routes, i) => React.createElement("div", { key: i, style: { marginBottom: "10px" } },
+        React.createElement("div", { style: { fontSize: "12.5px", fontWeight: 600, color: "#5A6472", marginBottom: "3px" } }, DAY_NAMES[i]),
+        routes.map(r => {
+          const k = key(i, r.code);
+          const current = templates.find(t => t.day_index === i && t.code === r.code);
+          const other = current && current.driver_id !== person.id ? nameOf(current.driver_id) : null;
+          return React.createElement("label", { key: k, style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", padding: "2px 0", cursor: "pointer" } },
+            React.createElement("input", { type: "checkbox", checked: checked.has(k), onChange: () => toggle(k) }),
+            React.createElement("span", { style: { fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 } }, r.code),
+            other && React.createElement("span", { style: { fontSize: "11.5px", color: checked.has(k) ? "#A9433F" : "#8A93A0" } }, checked.has(k) ? `(gaat over van ${other})` : `(standaard: ${other})`)
+          );
+        })
+      )),
+      React.createElement("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end", flexWrap: "wrap", marginTop: "4px" } },
+        React.createElement("button", { onClick: onClose, style: { border: "1px solid #C9CDD3", background: "#FFFFFF", borderRadius: "5px", padding: "6px 12px", fontSize: "12.5px", color: "#1B2A4A", cursor: "pointer" } }, "Annuleren"),
+        React.createElement("button", { onClick: () => save(false), style: { border: "1px solid #1B2A4A", background: "#1B2A4A", color: "#FFFFFF", borderRadius: "5px", padding: "6px 14px", fontSize: "12.5px", fontWeight: 600, cursor: "pointer" } }, "Opslaan")
+      ),
+      React.createElement("button", { onClick: () => save(true), title: `Zet deze routes in de week van ${weekLabel} op naam van ${person.name}, behalve op feestdagen en als hij vrij is`, style: { width: "100%", marginTop: "8px", border: "1px solid #1B2A4A", background: "#FFFFFF", color: "#1B2A4A", borderRadius: "5px", padding: "6px 0", fontSize: "12.5px", fontWeight: 600, cursor: "pointer" } }, `Opslaan en toepassen op deze week (${weekLabel})`)
     )
   );
 }
