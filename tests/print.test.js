@@ -12,6 +12,7 @@ test('Gecombineerde print chauffeurs + magazijn', async t => {
       rows: el ? [...el.querySelectorAll('tr')].map(tr => [...tr.children].map(td => td.textContent)) : null,
       colors: el ? [...el.querySelectorAll('tr')].map(tr => [...tr.children].map(td => td.style.background)) : null,
       css: el && el.querySelector('style').textContent,
+      cellFont: el && (td => td && { size: td.style.fontSize, weight: td.firstChild.style.fontWeight })([...el.querySelectorAll('td')].find(td => td.textContent === 'We Supply')),
       legend: el && el.querySelector('.rr-print-legend').textContent,
       title: el && el.querySelector('h1').textContent,
       tabHidden: tabWrapper.className === 'no-print',
@@ -44,6 +45,7 @@ test('Gecombineerde print chauffeurs + magazijn', async t => {
   check('Bert magazijn dinsdag lichtblauw', bertColors[1][2] === 'rgb(201, 226, 248)');
   check('Cor woensdag vakantie oranje', colorsOf('Cor')[3] === 'rgb(255, 184, 102)');
   check('Ad dinsdag (werkt niet) wit met streepje', row('Ad')[2] === '–' && colorsOf('Ad')[2] === 'rgb(255, 255, 255)');
+  check('Print: tekst in de vakjes 12px en vet', printed.cellFont && printed.cellFont.size === '12px' && printed.cellFont.weight === '700');
   check('Print staand A4', printed.css.includes('size: A4 portrait'));
   check('Legenda met Chauffeur, Magazijn, Vakantie/vrij, Ziek', ['Chauffeur', 'Magazijn', 'Vakantie/vrij', 'Ziek'].every(l => printed.legend.includes(l)));
   check('Tabbladinhoud verborgen tijdens printen', printed.tabHidden);

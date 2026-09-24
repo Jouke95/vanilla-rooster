@@ -12,6 +12,8 @@ test('Status ziek', async t => {
     { id: 3, driver_id: 2, driver_name: 'Bert', start_date: day(4), end_date: day(4), type: 'sick' }
   );
   // Nieuwe ziekmelding: server meldt dat er een route terug is gezet
+  // Bert rijdt dinsdag twee routes
+  db.routes.push({ id: 20, day_index: 1, code: 'Den Haag', driver_id: 2, driver_name: 'Bert' });
   const mockFetch = w.fetch;
   w.fetch = async (url, opts = {}) => {
     const res = await mockFetch(url, opts);
@@ -33,6 +35,12 @@ test('Status ziek', async t => {
   };
   check('Ad donderdag toont "Ziek"', cellsOf('Ad')[3].textContent === 'Ziek');
   check('Ziek-cel is rood', cellsOf('Ad')[3].style.background === 'rgb(248, 215, 212)');
+  check('Ad maandag (rijdt) groen, zoals het magazijn', cellsOf('Ad')[0].style.background === 'rgb(221, 239, 224)');
+  check('Ad dinsdag (rijdt niet) wit', cellsOf('Ad')[1].style.background === 'rgb(255, 255, 255)');
+  const fontSizes = cell => [...cell.querySelectorAll('input')].map(i => i.style.fontSize);
+  check('Eén route in een vakje: gewone lettergrootte', fontSizes(cellsOf('Ad')[0]).join() === '12.5px');
+  check('Twee routes in een vakje: kleinere letters', fontSizes(cellsOf('Bert')[1]).join() === '11px,11px');
+  check('Geen scheidingslijnen tussen chauffeurs: per chauffeur naam + 5 vakjes', rows().children.length === 2 * 6);
   check('Ad woensdag niet ziek', cellsOf('Ad')[2].textContent !== 'Ziek');
   check('Ziekmelding staat in de lijst rechts', [...w.document.querySelectorAll('strong')].some(e => e.textContent.trim() === 'Ziek'));
 
