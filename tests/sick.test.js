@@ -36,7 +36,7 @@ test('Status ziek', async t => {
   check('Ad donderdag toont "Ziek"', cellsOf('Ad')[3].textContent === 'Ziek');
   check('Ziek-cel is rood', cellsOf('Ad')[3].style.background === 'rgb(248, 215, 212)');
   check('Ad maandag (rijdt) groen, zoals het magazijn', cellsOf('Ad')[0].style.background === 'rgb(221, 239, 224)');
-  check('Ad dinsdag (rijdt niet) wit', cellsOf('Ad')[1].style.background === 'rgb(255, 255, 255)');
+  check('Ad dinsdag (rijdt niet) lichtgrijs zonder rand', cellsOf('Ad')[1].style.background === 'rgb(245, 246, 248)' && cellsOf('Ad')[1].style.border.includes('transparent'));
   const fontSizes = cell => [...cell.querySelectorAll('input')].map(i => i.style.fontSize);
   check('Eén route in een vakje: gewone lettergrootte', fontSizes(cellsOf('Ad')[0]).join() === '12.5px');
   check('Twee routes in een vakje: kleinere letters', fontSizes(cellsOf('Bert')[1]).join() === '11px,11px');

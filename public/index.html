@@ -547,7 +547,7 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
   const stickyChildren = [];
   stickyChildren.push(React.createElement("div", { key: "hdr-empty" }, ""));
   days.forEach(day => stickyChildren.push(
-    React.createElement("div", { key: `hdr-wrap-${day.id}`, style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "4px" } },
+    React.createElement("div", { key: `hdr-wrap-${day.id}`, className: "rr-day-head", style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "4px" } },
       dayHeader(day),
       React.createElement("button", { className: "rr-add-route no-print", onClick: () => addRoute(day.dayIndex), title: `Route toevoegen op ${day.name.toLowerCase()}`, "aria-label": `Route toevoegen op ${day.name.toLowerCase()}` }, "+")
     )
@@ -592,9 +592,10 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
       const away = absence(name, day.isoDate);
       const blocked = !!away;
       const assigned = driverDayRoutes[name][day.dayIndex];
-      // Zelfde kleuren als het magazijn: groen als hij die dag rijdt, lichtgeel op een feestdag
-      const baseColor = away ? ABSENCE[away].background : assigned.length > 0 ? "#DDEFE0" : day.holiday ? "#FDF8EE" : "#FFFFFF";
-      const borderColor = away ? ABSENCE[away].border : assigned.length > 0 ? "#7DB587" : day.holiday ? "#EBD9B8" : "#E3E6E9";
+      // Zelfde kleuren als het magazijn: groen als hij die dag rijdt, lichtgeel op een feestdag.
+      // Lege vakjes zonder rand en heel lichtgrijs, zodat alleen de ingevulde vakjes opvallen.
+      const baseColor = away ? ABSENCE[away].background : assigned.length > 0 ? "#DDEFE0" : day.holiday ? "#FDF8EE" : "#F5F6F8";
+      const borderColor = away ? ABSENCE[away].border : assigned.length > 0 ? "#7DB587" : "transparent";
       gridChildren.push(React.createElement("div", {
         key: `cell-${name}-${day.id}`,
         onDragOver: e => { if (blocked) return; e.preventDefault(); e.currentTarget.style.background = "#E8F4EA"; },
@@ -620,6 +621,8 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
       .rr-code-input { font-family: 'IBM Plex Mono', monospace; font-size: 14.5px; font-weight: 600; border: none; background: transparent; outline: none; width: 100%; color: #4A5568; letter-spacing: 0.01em; }
       .rr-add-route { border: none; background: transparent; width: 22px; height: 22px; border-radius: 50%; padding: 0; font-family: 'IBM Plex Sans', sans-serif; font-size: 17px; line-height: 20px; color: #8A93A0; cursor: pointer; flex-shrink: 0; }
       .rr-add-route:hover { color: #1B2A4A; background: #E3E6E9; }
+      .rr-add-route { opacity: 0; transition: opacity 0.12s ease; }
+      .rr-day-head:hover .rr-add-route, .rr-add-route:focus-visible { opacity: 1; }
       .rr-person-name:hover { text-decoration: underline; }
       .rr-chip-actions { opacity: 0; transition: opacity 0.12s ease; }
       .rr-driver-cell:hover .rr-chip-actions { opacity: 1; }
@@ -673,19 +676,7 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
         React.createElement("div", { className: "rr-driver-grid", style: { display: "grid", gridTemplateColumns: "110px repeat(5, 165px)", gap: "5px" } }, gridChildren)
       ),
       React.createElement("div", { className: "no-print", style: { display: "flex", flexDirection: "column", gap: "12px", width: "300px", flexShrink: 0 } },
-  React.createElement(VacationPanel, { teamNames: drivers, driverIdByName, vacations, setVacations, onRoutesChanged: reloadRoutes }),
-  React.createElement("div", { style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px 14px" } },
-    React.createElement("div", { style: { fontSize: "13px", fontWeight: 600, color: "#5A6472", marginBottom: "8px" } }, "Ingepland deze week"),
-    React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "4px" } },
-      drivers.map(name => {
-        const count = days.reduce((sum, day) => sum + driverDayRoutes[name][day.dayIndex].length, 0);
-        return React.createElement("div", { key: name, style: { display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: count === 0 ? "#A9433F" : "#1B2A4A" } },
-          React.createElement("span", null, name),
-          React.createElement("span", { style: { fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 } }, count)
-        );
-      })
-    )
-  )
+  React.createElement(VacationPanel, { teamNames: drivers, driverIdByName, vacations, setVacations, onRoutesChanged: reloadRoutes })
 )
     ),
     React.createElement(PeopleBar, { team: "is_driver", label: "Chauffeurs:", driversRaw, setDriversRaw, setVacations, onPersonClick: setTemplatePerson }),
