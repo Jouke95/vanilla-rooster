@@ -440,6 +440,102 @@ for (const [team, teamColumn] of Object.entries(SHIFT_TEAMS)) {
   });
 }
 
+// Easter egg: weetjes over alles wat tot en met vandaag in het rooster stond. Alleen lezen; niets over ziekte of vakantie.
+const UP_TO_TODAY = `date(week_key, '+' || day_index || ' days') <= date('now', 'localtime')`;
+// Al het werk: routes met chauffeur en diensten, met het team erbij
+const ALL_WORK = `
+  SELECT driver_id, week_key, day_index, 'rijden' AS team FROM routes WHERE driver_id IS NOT NULL
+  UNION ALL SELECT driver_id, week_key, day_index, 'magazijn' FROM warehouse_shifts
+  UNION ALL SELECT driver_id, week_key, day_index, 'productie' FROM production_shifts`;
+const ALL_SHIFTS = `
+  SELECT driver_id, week_key, day_index, start_time, end_time FROM warehouse_shifts
+  UNION ALL SELECT driver_id, week_key, day_index, start_time, end_time FROM production_shifts`;
+const TEAM_ORDER = ['rijden', 'magazijn', 'productie'];
+
+// Gewerkte minuten van een dienst; half uur pauze bij meer dan 5,5 uur, zoals in het rooster
+function workedMinutes(start, end) {
+  if (!start || !end) return 0;
+  const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const d = toMin(end) - toMin(start);
+  return d > 330 ? d - 30 : d;
+}
+// Degene die het vaakst voorkomt in [naam, ...]; bij gelijke stand alfabetisch
+function mostOften(names) {
+  const counts = new Map();
+  names.forEach(n => counts.set(n, (counts.get(n) || 0) + 1));
+  const best = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+  return best ? { name: best[0], count: best[1] } : null;
+}
+
+app.get('/api/stats', async (req, res) => {
+  const [routeKing, topRoute, totalRoutes, shifts, since, hardWorker, duo, explorer, busiestDay, allrounder] = await db.batch([
+    `SELECT d.name, COUNT(*) AS n FROM routes r JOIN drivers d ON d.id = r.driver_id
+     WHERE ${UP_TO_TODAY} GROUP BY r.driver_id ORDER BY n DESC, d.name LIMIT 1`,
+    `SELECT code, COUNT(*) AS n FROM routes WHERE driver_id IS NOT NULL AND code != '' AND ${UP_TO_TODAY}
+     GROUP BY code ORDER BY n DESC, code LIMIT 1`,
+    `SELECT COUNT(*) AS n FROM routes WHERE driver_id IS NOT NULL AND ${UP_TO_TODAY}`,
+    `SELECT d.name, s.start_time, s.end_time FROM (${ALL_SHIFTS}) s JOIN drivers d ON d.id = s.driver_id WHERE ${UP_TO_TODAY}`,
+    `SELECT MIN(date(week_key, '+' || day_index || ' days')) AS d FROM (${ALL_WORK}) WHERE ${UP_TO_TODAY}`,
+    `SELECT d.name, COUNT(DISTINCT w.week_key || '-' || w.day_index) AS n FROM (${ALL_WORK}) w JOIN drivers d ON d.id = w.driver_id
+     WHERE ${UP_TO_TODAY} GROUP BY w.driver_id ORDER BY n DESC, d.name LIMIT 1`,
+    `SELECT d.name, r.code, COUNT(*) AS n FROM routes r JOIN drivers d ON d.id = r.driver_id
+     WHERE r.code != '' AND ${UP_TO_TODAY} GROUP BY r.driver_id, r.code ORDER BY n DESC, d.name, r.code LIMIT 1`,
+    `SELECT d.name, COUNT(DISTINCT r.code) AS n FROM routes r JOIN drivers d ON d.id = r.driver_id
+     WHERE r.code != '' AND ${UP_TO_TODAY} GROUP BY r.driver_id ORDER BY n DESC, d.name LIMIT 1`,
+    `SELECT date(week_key, '+' || day_index || ' days') AS day, COUNT(DISTINCT driver_id) AS n FROM (${ALL_WORK})
+     WHERE ${UP_TO_TODAY} GROUP BY day ORDER BY n DESC, day LIMIT 1`,
+    `SELECT d.name, GROUP_CONCAT(DISTINCT w.team) AS teams, COUNT(DISTINCT w.team) AS n FROM (${ALL_WORK}) w JOIN drivers d ON d.id = w.driver_id
+     WHERE ${UP_TO_TODAY} GROUP BY w.driver_id ORDER BY n DESC, d.name LIMIT 1`,
+  ], 'read');
+
+  const minutes = shifts.rows.reduce((sum, s) => sum + workedMinutes(s.start_time, s.end_time), 0);
+  const hours = Math.round(minutes / 60);
+  const one = (result, map) => result.rows[0] ? map(result.rows[0]) : null;
+  res.json({
+    routeKing: one(routeKing, r => ({ name: r.name, count: Number(r.n) })),
+    topRoute: one(topRoute, r => ({ code: r.code, count: Number(r.n) })),
+    totalRoutes: Number(totalRoutes.rows[0].n),
+    earlyBird: mostOften(shifts.rows.filter(s => s.start_time && s.start_time < '07:30').map(s => s.name)),
+    hardWorker: one(hardWorker, r => ({ name: r.name, days: Number(r.n) })),
+    duo: one(duo, r => ({ name: r.name, code: r.code, count: Number(r.n) })),
+    explorer: one(explorer, r => ({ name: r.name, routes: Number(r.n) })),
+    busiestDay: one(busiestDay, r => ({ date: r.day, people: Number(r.n) })),
+    // Alleen een allrounder als iemand in meer dan één team werkte
+    allrounder: one(allrounder, r => Number(r.n) > 1 ? { name: r.name, teams: TEAM_ORDER.filter(t => r.teams.split(',').includes(t)) } : null),
+    hours,
+    coffee: Math.round(hours / 2),
+    since: since.rows[0].d || null,
+  });
+});
+
+// Persoonlijke kaart in de Hall of Fame: de weetjes van één persoon
+app.get('/api/stats/person/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const [person, routes, favorite, shifts, work] = await db.batch([
+    { sql: 'SELECT name FROM drivers WHERE id = ?', args: [id] },
+    { sql: `SELECT COUNT(*) AS n, COUNT(DISTINCT CASE WHEN code != '' THEN code END) AS distinct_routes FROM routes WHERE driver_id = ? AND ${UP_TO_TODAY}`, args: [id] },
+    { sql: `SELECT code, COUNT(*) AS n FROM routes WHERE driver_id = ? AND code != '' AND ${UP_TO_TODAY} GROUP BY code ORDER BY n DESC, code LIMIT 1`, args: [id] },
+    { sql: `SELECT start_time, end_time FROM (${ALL_SHIFTS}) WHERE driver_id = ? AND ${UP_TO_TODAY}`, args: [id] },
+    { sql: `SELECT COUNT(DISTINCT week_key || '-' || day_index) AS days, GROUP_CONCAT(DISTINCT team) AS teams,
+            MIN(date(week_key, '+' || day_index || ' days')) AS first_day FROM (${ALL_WORK}) WHERE driver_id = ? AND ${UP_TO_TODAY}`, args: [id] },
+  ], 'read');
+  if (!person.rows[0]) return res.status(404).json({ error: 'persoon niet gevonden' });
+  const starts = shifts.rows.map(s => s.start_time).filter(Boolean).sort();
+  const w = work.rows[0];
+  res.json({
+    name: person.rows[0].name,
+    routes: Number(routes.rows[0].n),
+    distinctRoutes: Number(routes.rows[0].distinct_routes),
+    favoriteRoute: favorite.rows[0] ? { code: favorite.rows[0].code, count: Number(favorite.rows[0].n) } : null,
+    shifts: shifts.rows.length,
+    hours: Math.round(shifts.rows.reduce((sum, s) => sum + workedMinutes(s.start_time, s.end_time), 0) / 60),
+    earliestStart: starts[0] || null,
+    days: Number(w.days),
+    teams: w.teams ? TEAM_ORDER.filter(t => w.teams.split(',').includes(t)) : [],
+    firstDay: w.first_day || null,
+  });
+});
+
 // Express 5 stuurt fouten uit async handlers hierheen; geef JSON terug i.p.v. een HTML-foutpagina
 app.use((err, req, res, next) => {
   console.error(err);

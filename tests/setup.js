@@ -79,6 +79,10 @@ function setupApp({ extraRoutes = [] } = {}) {
     }
     const json = data => ({ ok: true, status: 200, json: async () => data });
     if (url === '/api/drivers' && method === 'GET') return json(db.drivers);
+    if (url === '/api/stats') return json({ routeKing: { name: 'Ad', count: 1234 }, topRoute: { code: 'Rotterdam', count: 321 }, totalRoutes: 5000, earlyBird: null, hardWorker: { name: 'Bert', days: 200 },
+      duo: { name: 'Ad', code: 'Rotterdam', count: 38 }, explorer: { name: 'Bert', routes: 14 }, busiestDay: { date: '2026-09-15', people: 23 }, allrounder: { name: 'Bert', teams: ['rijden', 'magazijn', 'productie'] },
+      hours: 1500, coffee: 750, since: '2026-09-07' });
+    if (url.startsWith('/api/stats/person/')) return json({ name: 'Cor', routes: 0, distinctRoutes: 0, favoriteRoute: null, shifts: 12, hours: 90, earliestStart: '07:15', days: 12, teams: ['magazijn', 'productie'], firstDay: '2026-09-07' });
     if (url === '/api/vacations' && method === 'GET') return json(db.vacations);
     if (url.startsWith('/api/routes?')) return json(db.routes);
     if (url === '/api/routes/new-week') return json(body.routes.map((r, i) => ({ id: 1000 + i, ...r, driver_id: null, driver_name: null })));

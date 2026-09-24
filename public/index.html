@@ -1254,6 +1254,124 @@ function CombinedPrint({ weekOffset, driversRaw, vacations, onDone }) {
   );
 }
 
+// Easter egg: piepklein 🏆 rechtsonder opent de Hall of Fame met weetjes uit /api/stats
+const MILESTONES = {
+  routes: [100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000],
+  hours: [100, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000]
+};
+const nl = n => Number(n).toLocaleString("nl-NL");
+const longDate = iso => new Date(iso + "T12:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" });
+const listNl = items => items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} en ${items[items.length - 1]}`;
+
+// Hoogste mijlpaal die gehaald is maar in deze browser nog niet gevierd; bewaart wat al gevierd is
+function newMilestone(stats) {
+  const reached = key => MILESTONES[key].filter(m => (key === "routes" ? stats.totalRoutes : stats.hours) >= m).pop() || 0;
+  const now = { routes: reached("routes"), hours: reached("hours") };
+  let seen = { routes: 0, hours: 0 };
+  try { seen = { ...seen, ...JSON.parse(localStorage.getItem("rr-fame-milestones") || "{}") }; } catch (err) {}
+  try { localStorage.setItem("rr-fame-milestones", JSON.stringify({ routes: Math.max(now.routes, seen.routes), hours: Math.max(now.hours, seen.hours) })); } catch (err) {}
+  if (now.routes > seen.routes) return `${nl(now.routes)} routes gereden!`;
+  if (now.hours > seen.hours) return `${nl(now.hours)} uur gewerkt in magazijn en productie!`;
+  return null;
+}
+
+function Confetti() {
+  const colors = ["#F28B82", "#FFB866", "#FFF0A0", "#CDEBC5", "#C9E2F8", "#C9B6E8", "#4C9A5B"];
+  const pieces = Array.from({ length: 90 }, (_, i) => ({
+    left: Math.random() * 100, delay: Math.random() * 0.8, duration: 2 + Math.random() * 1.5,
+    color: colors[i % colors.length], size: 6 + Math.random() * 6, turn: Math.random() * 720 - 360
+  }));
+  return React.createElement("div", { "aria-hidden": true, className: "rr-confetti", style: { position: "fixed", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 160 } },
+    pieces.map((p, i) => React.createElement("span", { key: i, style: {
+      position: "absolute", top: "-20px", left: `${p.left}%`, width: `${p.size}px`, height: `${p.size * 0.6}px`, background: p.color, borderRadius: "2px",
+      animation: `rr-fall ${p.duration}s ease-in ${p.delay}s 1 forwards`, "--turn": `${p.turn}deg`
+    } }))
+  );
+}
+
+function FameRow({ icon, title, text }) {
+  return React.createElement("div", { style: { display: "flex", gap: "12px", alignItems: "center", padding: "7px 0", borderTop: "1px solid #EEF1F4" } },
+    React.createElement("span", { style: { fontSize: "22px", width: "30px", textAlign: "center", flexShrink: 0 } }, icon),
+    React.createElement("div", null,
+      React.createElement("div", { style: { fontSize: "11.5px", fontWeight: 700, color: "#5A6472", textTransform: "uppercase", letterSpacing: "0.04em" } }, title),
+      React.createElement("div", { style: { fontSize: "14px" } }, text)
+    )
+  );
+}
+
+function HallOfFame({ driversRaw, onClose }) {
+  const [stats, setStats] = useState(null);
+  const [milestone, setMilestone] = useState(null);
+  const [card, setCard] = useState(null);  // persoonlijke kaart, of null voor het overzicht
+  useEffect(() => {
+    api("/api/stats").then(data => { setStats(data); setMilestone(newMilestone(data)); }, onClose);
+    const onKey = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const openCard = person => { setCard({ loading: true, name: person.name }); api(`/api/stats/person/${person.id}`).then(setCard, () => setCard(null)); };
+
+  const facts = stats ? [
+    ["👑", "Routekoning", stats.routeKing ? `${stats.routeKing.name}, met ${nl(stats.routeKing.count)} routes` : "nog niemand"],
+    ["🗺️", "Populairste route", stats.topRoute ? `${stats.topRoute.code} (${nl(stats.topRoute.count)} keer gereden)` : "nog geen"],
+    ["💞", "Onafscheidelijk duo", stats.duo ? `${stats.duo.name} & ${stats.duo.code}: ${nl(stats.duo.count)} keer samen` : "nog geen"],
+    ["🧭", "Ontdekkingsreiziger", stats.explorer ? `${stats.explorer.name}, ${nl(stats.explorer.routes)} verschillende routes gereden` : "nog niemand"],
+    ["🎪", "Allrounder", stats.allrounder ? `${stats.allrounder.name}: ${listNl(stats.allrounder.teams)}` : "nog niemand in meer dan één team"],
+    ["🐓", "Vroege vogel", stats.earlyBird ? `${stats.earlyBird.name}, ${nl(stats.earlyBird.count)} keer vóór half 8 begonnen` : "nog niemand vóór half 8"],
+    ["💪", "Harde werker", stats.hardWorker ? `${stats.hardWorker.name}, ${nl(stats.hardWorker.days)} dagen gewerkt` : "nog niemand"],
+    ["📅", "Drukste dag ooit", stats.busiestDay ? `${longDate(stats.busiestDay.date)}, ${nl(stats.busiestDay.people)} mensen aan het werk` : "nog geen"],
+    ["☕", "Koffie-index", `${nl(stats.hours)} uur in magazijn en productie, goed voor zo'n ${nl(stats.coffee)} bakken koffie`],
+    ["🚚", "Gereden routes", `${nl(stats.totalRoutes)} in totaal`]
+  ] : [];
+
+  const cardFacts = card && !card.loading ? [
+    ["🚚", "Routes", card.routes ? `${nl(card.routes)} gereden, ${nl(card.distinctRoutes)} verschillende` : "nog geen routes"],
+    ["💞", "Favoriete route", card.favoriteRoute ? `${card.favoriteRoute.code} (${nl(card.favoriteRoute.count)} keer)` : "–"],
+    ["⏱️", "Diensten", card.shifts ? `${nl(card.shifts)} diensten, ${nl(card.hours)} uur` : "nog geen diensten"],
+    ["🐓", "Vroegste begin", card.earliestStart || "–"],
+    ["💪", "Dagen gewerkt", nl(card.days)],
+    ["🎪", "Teams", card.teams.length ? listNl(card.teams) : "–"],
+    ["📅", "Eerste dag in het rooster", card.firstDay ? longDate(card.firstDay) : "–"]
+  ] : [];
+
+  const people = [...driversRaw].sort((a, b) => a.name.localeCompare(b.name));
+  return React.createElement("div", { className: "no-print", onClick: onClose, style: { position: "fixed", inset: 0, zIndex: 150, background: "rgba(27,42,74,0.3)", display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" } },
+    React.createElement("style", null, `
+      @keyframes rr-truck { from { transform: translateX(-60px); } to { transform: translateX(520px); } }
+      .rr-truck { position: absolute; top: 14px; left: 0; font-size: 22px; animation: rr-truck 2.4s ease-in-out 1 forwards; }
+      @keyframes rr-pop { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+      @keyframes rr-fall { to { transform: translateY(110vh) rotate(var(--turn)); } }
+      .rr-fame-person { border: 1px solid #DCE5DC; background: #F3F8F3; border-radius: 14px; padding: 3px 10px; font-size: 12.5px; color: #1B2A4A; cursor: pointer; }
+      .rr-fame-person:hover { background: #DDEFE0; border-color: #7DB587; }
+    `),
+    milestone && React.createElement(Confetti),
+    React.createElement("div", { role: "dialog", "aria-label": "Hall of Fame", className: "rr-hall", onClick: e => e.stopPropagation(), style: { position: "relative", overflow: "hidden", background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "12px", boxShadow: "0 10px 30px rgba(0,0,0,0.2)", padding: "52px 22px 18px", width: "480px", maxWidth: "100%", maxHeight: "calc(100vh - 32px)", overflowY: "auto", boxSizing: "border-box", fontFamily: "'IBM Plex Sans', system-ui, sans-serif", color: "#1B2A4A", animation: "rr-pop 0.2s ease-out" } },
+      React.createElement("span", { className: "rr-truck", "aria-hidden": true }, "💨🚚"),
+      React.createElement("button", { onClick: onClose, "aria-label": "Sluiten", title: "Sluiten", style: { position: "absolute", top: "10px", right: "12px", border: "none", background: "transparent", fontSize: "20px", color: "#5A6472", cursor: "pointer" } }, "×"),
+      card
+        ? React.createElement(React.Fragment, null,
+            React.createElement("button", { className: "rr-fame-back", onClick: () => setCard(null), style: { position: "absolute", top: "12px", left: "14px", border: "none", background: "transparent", fontSize: "13px", color: "#5A6472", cursor: "pointer" } }, "← Hall of Fame"),
+            React.createElement("div", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "20px", fontWeight: 700, textAlign: "center", marginBottom: "12px" } }, `🏅 ${card.name}`),
+            card.loading && React.createElement("div", { style: { textAlign: "center", fontSize: "13px", color: "#8A93A0", padding: "20px 0" } }, "Even tellen…"),
+            cardFacts.map(([icon, title, text]) => React.createElement(FameRow, { key: title, icon, title, text }))
+          )
+        : React.createElement(React.Fragment, null,
+            React.createElement("div", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "20px", fontWeight: 700, textAlign: "center" } }, "🏆 Hall of Fame"),
+            React.createElement("div", { style: { fontSize: "12px", color: "#5A6472", textAlign: "center", margin: "2px 0 12px" } },
+              stats && stats.since ? `Alles van ${longDate(stats.since)} tot en met vandaag` : "Alles wat tot en met vandaag in het rooster stond"),
+            milestone && React.createElement("div", { className: "rr-fame-milestone", style: { textAlign: "center", background: "#FFF6D6", border: "1px solid #F0D98A", borderRadius: "8px", padding: "8px", marginBottom: "10px", fontWeight: 700, fontSize: "14px" } }, `🎉 Mijlpaal: ${milestone}`),
+            !stats && React.createElement("div", { style: { textAlign: "center", fontSize: "13px", color: "#8A93A0", padding: "20px 0" } }, "Even tellen…"),
+            facts.map(([icon, title, text]) => React.createElement(FameRow, { key: title, icon, title, text })),
+            stats && people.length > 0 && React.createElement("div", { style: { borderTop: "1px solid #EEF1F4", paddingTop: "10px" } },
+              React.createElement("div", { style: { fontSize: "11.5px", fontWeight: 700, color: "#5A6472", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "6px" } }, "🏅 Bekijk iemands eigen kaart"),
+              React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: "6px" } },
+                people.map(p => React.createElement("button", { key: p.id, className: "rr-fame-person", onClick: () => openCard(p) }, p.name)))
+            )
+          )
+    )
+  );
+}
+
 function App() {
   const [tab, setTab] = useState("chauffeurs");
   const [weekOffset, setWeekOffset] = useState(0);
@@ -1262,6 +1380,7 @@ function App() {
   const [combinedPrint, setCombinedPrint] = useState(false);
   const [apiError, setApiError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [showFame, setShowFame] = useState(false);
 
   useEffect(() => {
     onApiError = error => {
@@ -1305,6 +1424,10 @@ function App() {
       ),
       React.createElement("span", { onClick: () => setApiError(null), title: "Sluiten", style: { cursor: "pointer", fontSize: "16px", lineHeight: 1, color: "#A9433F" } }, "×")
     ),
+    // Easter egg
+    React.createElement("button", { className: "rr-fame-btn no-print", onClick: () => setShowFame(true), title: "🤫", "aria-label": "Hall of Fame" }, "🏆"),
+    React.createElement("style", null, `.rr-fame-btn { position: fixed; right: 10px; bottom: 8px; border: none; background: transparent; font-size: 14px; opacity: 0.12; cursor: pointer; transition: opacity 0.2s ease, transform 0.2s ease; } .rr-fame-btn:hover { opacity: 1; transform: scale(1.3) rotate(-10deg); }`),
+    showFame && React.createElement(HallOfFame, { driversRaw, onClose: () => setShowFame(false) }),
     combinedPrint && React.createElement(CombinedPrint, { weekOffset, driversRaw, vacations, onDone: () => setCombinedPrint(false) })
   );
 }
