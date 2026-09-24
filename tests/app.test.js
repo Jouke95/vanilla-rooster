@@ -22,7 +22,7 @@ test('Teams, magazijnrooster, uren en standaardrooster', async t => {
   check('Magazijn-tab: "⚠ rijdt: Rotterdam" bij Bert', text().includes('⚠ rijdt: Rotterdam'));
   check('Cor heeft vakantie op woensdag', text().includes('Vakantie/vrij'));
   check('Ad staat niet in het magazijnrooster', !whChips.includes('Ad') && byText('Ad', 'div').length === 0);
-  check('Standaardrooster bij openen week toegepast (only_if_new)', calls.some(c => c.startsWith('POST /api/warehouse-shifts/apply-template') && c.includes('"only_if_new":true')));
+  check('Week openen: standaardrooster en diensten in één verzoek (fill_new)', calls.some(c => c.startsWith('POST /api/warehouse-shifts/open-week') && c.includes('"fill_new":true')));
   check('Dienst toont tijden "07:00–15:00"', text().includes('07:00–15:00'));
   check('Dienst zonder tijden toont "Werkt"', byText('Werkt', 'span').length === 1);
   // Uren per persoon in het blok "Uren deze week"

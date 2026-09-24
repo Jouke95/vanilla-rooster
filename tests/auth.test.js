@@ -10,7 +10,8 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rooster-auth-test-'));
 const PORT = String(3100 + Math.floor(Math.random() * 800));
 const BASE = `http://localhost:${PORT}`;
 // Lege TURSO_AUTH_TOKEN zodat dotenv de echte waarden uit .env niet gebruikt
-Object.assign(process.env, { TURSO_DATABASE_URL: `file:${path.join(dir, 'test.db')}`, TURSO_AUTH_TOKEN: '', PORT });
+// SESSION_CACHE_MS=0: het wachtwoord wordt hier vanuit dit proces gewijzigd, de server moet dat direct merken
+Object.assign(process.env, { TURSO_DATABASE_URL: `file:${path.join(dir, 'test.db')}`, TURSO_AUTH_TOKEN: '', PORT, SESSION_CACHE_MS: '0' });
 
 const servers = [];
 let setPassword;
@@ -146,4 +147,25 @@ test('op Render: blokkade per bezoeker en Secure-cookie via https', async () => 
   const other = await login(PASSWORD, viaRender('198.51.100.2'));
   assert.strictEqual(other.status, 200, 'andere bezoeker kan gewoon inloggen');
   assert.match(other.headers.get('set-cookie'), /Secure/);
+});
+
+test('met sessiegeheugen: uitloggen werkt direct, nieuw wachtwoord uiterlijk na de bewaartijd', async () => {
+  const port = String(Number(PORT) + 2);
+  await startServer({ PORT: port, SESSION_CACHE_MS: '1500' });
+  const base = `http://localhost:${port}`;
+  const loginHere = async () => cookieFrom(await login(PASSWORD, { base }));
+  const getHere = (url, cookie) => fetch(base + url, { redirect: 'manual', headers: { cookie } });
+
+  // Uitloggen: direct geen toegang meer, ook al stond de sessie in het geheugen
+  let cookie = await loginHere();
+  assert.strictEqual((await getHere('/api/drivers', cookie)).status, 200);
+  await fetch(`${base}/api/logout`, { method: 'POST', headers: { cookie } });
+  assert.strictEqual((await getHere('/api/drivers', cookie)).status, 401);
+
+  // Nieuw wachtwoord vanuit een ander proces: na de bewaartijd geen toegang meer
+  cookie = await loginHere();
+  assert.strictEqual((await getHere('/api/drivers', cookie)).status, 200);
+  await setPassword(PASSWORD);
+  await new Promise(r => setTimeout(r, 1700));
+  assert.strictEqual((await getHere('/api/drivers', cookie)).status, 401);
 });

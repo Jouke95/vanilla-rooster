@@ -86,6 +86,29 @@ test('diensten en standaardrooster van productie staan los van het magazijn', as
   assert.deepStrictEqual((await json('GET', `/api/production-shifts?week_key=${WEEK}`)).map(s => s.day_index), [1]);
 });
 
+test('week openen in één verzoek: standaardrooster alleen de eerste keer, diensten terug', async () => {
+  const eva = (await json('GET', '/api/drivers')).find(d => d.name === 'Eva');
+  const W = '2026-11-02';
+  // Magazijn heeft geen standaardrooster: niets ingevuld en de week niet gemarkeerd
+  assert.deepStrictEqual(await json('POST', '/api/warehouse-shifts/open-week', { week_key: W, fill_new: true }), []);
+  const marked = await db.execute({ sql: 'SELECT COUNT(*) AS n FROM warehouse_weeks WHERE week_key = ?', args: [W] });
+  assert.strictEqual(Number(marked.rows[0].n), 0, 'zonder standaardrooster niet markeren');
+
+  // Productie: Eva di (09:00) en do (10:00); donderdag is feestdag
+  const first = await json('POST', '/api/production-shifts/open-week', { week_key: W, fill_new: true, skip_days: [3] });
+  assert.deepStrictEqual(first.map(r => [r.day_index, r.driver_id, r.start_time]), [[1, eva.id, '09:00']]);
+
+  // Dienst weghalen en opnieuw openen: wordt niet opnieuw ingevuld (week is gemarkeerd)
+  await call('DELETE', '/api/production-shifts', { week_key: W, day_index: 1, driver_id: eva.id });
+  assert.deepStrictEqual(await json('POST', '/api/production-shifts/open-week', { week_key: W, fill_new: true }), []);
+
+  // Zonder fill_new (weken in het verleden): alleen ophalen, niet markeren
+  const PAST = '2026-01-05';
+  assert.deepStrictEqual(await json('POST', '/api/production-shifts/open-week', { week_key: PAST, fill_new: false }), []);
+  const pastMarked = await db.execute({ sql: 'SELECT COUNT(*) AS n FROM production_weeks WHERE week_key = ?', args: [PAST] });
+  assert.strictEqual(Number(pastMarked.rows[0].n), 0);
+});
+
 test('week leegmaken haalt alleen de productiediensten van die week weg', async () => {
   const eva = (await json('GET', '/api/drivers')).find(d => d.name === 'Eva');
   await call('POST', '/api/production-shifts', { week_key: '2026-10-19', day_index: 0, driver_id: eva.id, start_time: '09:00', end_time: '16:30' });

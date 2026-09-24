@@ -136,6 +136,31 @@ test('ziek melden zet de routes van die dagen terug naar niet toegewezen; vakant
   assert.strictEqual(other.type, 'vacation', 'onbekende soort wordt vakantie');
 });
 
+test('nieuwe week in één verzoek: routes aanmaken, standaardrooster toepassen, niet dubbel', async () => {
+  // Bert (2) rijdt standaard dinsdag Rotterdam; Ad (1) maandag Rotterdam
+  await call('PUT', '/api/route-templates/2', { routes: [{ day_index: 1, code: 'Rotterdam' }] });
+  const NEW = '2026-11-16';
+  const seed = [{ day_index: 0, code: 'Rotterdam' }, { day_index: 1, code: 'Rotterdam' }, { day_index: 1, code: 'Noord' }];
+  // Twee tegelijk, zoals twee mensen die dezelfde nieuwe week openen
+  const [a, b] = await Promise.all([
+    call('POST', '/api/routes/new-week', { week_key: NEW, routes: seed }).then(r => r.json()),
+    call('POST', '/api/routes/new-week', { week_key: NEW, routes: seed }).then(r => r.json()),
+  ]);
+  const count = await db.execute({ sql: 'SELECT COUNT(*) AS n FROM routes WHERE week_key = ?', args: [NEW] });
+  assert.strictEqual(Number(count.rows[0].n), 3, 'geen dubbele routes');
+  assert.strictEqual(a.length, 3);
+  assert.strictEqual(b.length, 3);
+  const byCode = (rows, day, code) => rows.find(r => r.day_index === day && r.code === code);
+  assert.strictEqual(byCode(a, 1, 'Rotterdam').driver_name, 'Bert', 'standaardrooster toegepast');
+  assert.strictEqual(byCode(a, 1, 'Noord').driver_id, null);
+
+  // Week bestaat al: niets erbij, wel de bestaande routes terug
+  const again = await (await call('POST', '/api/routes/new-week', { week_key: NEW, routes: seed })).json();
+  assert.strictEqual(again.length, 3);
+  const bad = await call('POST', '/api/routes/new-week', { week_key: NEW, routes: [{ day_index: 9, code: 'X' }] });
+  assert.strictEqual(bad.status, 400);
+});
+
 test('persoon verwijderen haalt hem ook uit het standaardrooster', async () => {
   await call('DELETE', '/api/drivers/2');
   const rows = await (await call('GET', '/api/route-templates')).json();

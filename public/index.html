@@ -4,8 +4,8 @@
   <meta charset="utf-8" />
   <title>Weekrooster routes</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
   <style>
     html, body, #root { margin: 0; padding: 0; min-height: 100%; }
   </style>
@@ -27,7 +27,7 @@ async function api(url, options = {}) {
   try {
     res = await fetch(url, init);
   } catch (err) {
-    throw reportApiError(method, "geen verbinding met de server");
+    throw reportApiError(method, "geen verbinding met de server", options.loading);
   }
   if (res.status === 401) {
     // Sessie verlopen of uitgelogd: terug naar het inlogscherm, zonder foutmelding
@@ -39,7 +39,7 @@ async function api(url, options = {}) {
   if (!res.ok) {
     let message = `serverfout (${res.status})`;
     try { const data = await res.json(); if (data && data.error) message = data.error; } catch (err) {}
-    throw reportApiError(method, message);
+    throw reportApiError(method, message, options.loading);
   }
   return res.status === 204 ? null : res.json();
 }
@@ -50,10 +50,12 @@ async function logout() {
   await api("/api/logout", { method: "POST" }).catch(() => {});
   goToLogin();
 }
-function reportApiError(method, message) {
+// loading: een POST die alleen dient om gegevens te laden (week openen) telt als laden, niet als opslaan,
+// zodat een fout geen herlaadlus geeft
+function reportApiError(method, message, loading) {
   const err = new Error(message);
   err.reported = true;
-  onApiError({ saving: method !== "GET", message });
+  onApiError({ saving: method !== "GET" && !loading, message });
   return err;
 }
 // Fouten die al als melding getoond zijn niet nog eens in de console gooien
@@ -414,13 +416,9 @@ function RouteRooster({ weekOffset, setWeekOffset, driversRaw, setDriversRaw, va
       setLoading(true);
       let routes = await api(`/api/routes?week_key=${currentKey}`);
       if (routes.length === 0) {
-        for (let i = 0; i < SEED_ROUTES_PER_DAY.length; i++) {
-          for (const r of SEED_ROUTES_PER_DAY[i]) {
-            await api("/api/routes", { method: "POST", body: { week_key: currentKey, day_index: i, code: r.code } });
-          }
-        }
-        await api("/api/routes/apply-template", { method: "POST", body: { week_key: currentKey, skip_days: holidayDays } });
-        routes = await api(`/api/routes?week_key=${currentKey}`);
+        // Nieuwe week: vaste routes aanmaken en standaardrooster toepassen in één verzoek
+        const seed = SEED_ROUTES_PER_DAY.flatMap((list, i) => list.map(r => ({ day_index: i, code: r.code })));
+        routes = await api("/api/routes/new-week", { method: "POST", loading: true, body: { week_key: currentKey, routes: seed, skip_days: holidayDays } });
       }
       const routesWithFixed = routes.map(r => ({ ...r, fixed: isFixedRoute(r.day_index, r.code) }));
       if (!cancelled) { setRawRoutes(routesWithFixed); setLoading(false); }
@@ -818,11 +816,10 @@ function ShiftRooster({ team, weekOffset, setWeekOffset, driversRaw, setDriversR
     let cancelled = false;
     async function loadWeek() {
       setLoading(true);
-      // Deze en toekomstige weken krijgen bij de eerste keer openen het standaardrooster
-      if (currentKey >= weekKey(getMondayOfThisWeek())) {
-        await api(`/api/${team}-shifts/apply-template`, { method: "POST", body: { week_key: currentKey, only_if_new: true, skip_days: holidayDays } });
-      }
-      const loaded = await loadShifts();
+      // Deze en toekomstige weken krijgen bij de eerste keer openen het standaardrooster; in hetzelfde verzoek
+      // komen de diensten terug
+      const rows = await api(`/api/${team}-shifts/open-week`, { method: "POST", loading: true, body: { week_key: currentKey, fill_new: currentKey >= weekKey(getMondayOfThisWeek()), skip_days: holidayDays } });
+      const loaded = new Map(rows.map(r => [shiftKey(r.day_index, r.driver_id), { start_time: r.start_time, end_time: r.end_time }]));
       if (!cancelled) { setShifts(loaded); setLoading(false); }
     }
     loadWeek();

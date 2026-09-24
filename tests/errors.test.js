@@ -20,7 +20,7 @@ test('Foutmeldingen bij mislukt opslaan of laden', async t => {
   check('Melding "Niet opgeslagen: serverfout"', banner() && banner().textContent.includes('Niet opgeslagen: serverfout'));
   const after = calls.slice(n);
   check('Na fout: personen, vakanties, diensten en templates opnieuw geladen',
-    ['GET /api/drivers', 'GET /api/vacations', 'GET /api/warehouse-shifts?', 'GET /api/warehouse-templates'].every(p => after.some(c => c.startsWith(p))));
+    ['GET /api/drivers', 'GET /api/vacations', 'POST /api/warehouse-shifts/open-week', 'GET /api/warehouse-templates'].every(p => after.some(c => c.startsWith(p))));
   check('Na herladen staat de mislukte dienst niet meer in beeld', !text().includes('07:00–16:30'));
 
   await act(async () => { byText('×', 'span').find(e => e.title === 'Sluiten').click(); });
@@ -33,12 +33,12 @@ test('Foutmeldingen bij mislukt opslaan of laden', async t => {
   check('Vakantie van Cor staat na herladen nog in beeld', text().includes('Vakantie/vrij'));
 
   // 3. Laadfout overschrijft melding over niet-opgeslagen werk niet
-  state.failNext = { match: (m, u) => m === 'GET' && u.startsWith('/api/warehouse-shifts?'), status: 500, body: { error: 'serverfout' } };
+  state.failNext = { match: (m, u) => u === '/api/warehouse-shifts/open-week', status: 500, body: { error: 'serverfout' } };
   await act(async () => { byText('volgende week →', 'button')[0].click(); }); await tick(); await tick();
   check('Laadfout laat eerdere opslagmelding staan', banner().textContent.includes('Niet opgeslagen'));
   await act(async () => { byText('×', 'span').find(e => e.title === 'Sluiten').click(); });
   n = calls.length;
-  state.failNext = { match: (m, u) => m === 'GET' && u.startsWith('/api/warehouse-shifts?'), status: 500, body: { error: 'serverfout' } };
+  state.failNext = { match: (m, u) => u === '/api/warehouse-shifts/open-week', status: 500, body: { error: 'serverfout' } };
   await act(async () => { byText('volgende week →', 'button')[0].click(); }); await tick(); await tick();
   check('Laadfout geeft "Kon gegevens niet laden"', banner() && banner().textContent.includes('Kon gegevens niet laden: serverfout'));
   check('Laadfout start geen herlaadlus', !calls.slice(n).some(c => c.startsWith('GET /api/drivers')));

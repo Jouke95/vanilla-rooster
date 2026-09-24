@@ -111,12 +111,9 @@ app.delete('/api/vacations/:id', async (req, res) => {
   res.status(204).send();
 });
 
-app.get('/api/routes', async (req, res) => {
-  const { week_key } = req.query;
-  if (!week_key) {
-    return res.status(400).json({ error: 'week_key is verplicht (bijv. ?week_key=2026-09-15)' });
-  }
-  const result = await db.execute({
+// Routes van een week met de naam van de chauffeur
+function selectWeekRoutes(weekKey) {
+  return {
     sql: `
       SELECT routes.id, routes.day_index, routes.code,
              drivers.id AS driver_id, drivers.name AS driver_name
@@ -125,8 +122,16 @@ app.get('/api/routes', async (req, res) => {
       WHERE routes.week_key = ?
       ORDER BY routes.day_index, routes.id
     `,
-    args: [week_key],
-  });
+    args: [weekKey],
+  };
+}
+
+app.get('/api/routes', async (req, res) => {
+  const { week_key } = req.query;
+  if (!week_key) {
+    return res.status(400).json({ error: 'week_key is verplicht (bijv. ?week_key=2026-09-15)' });
+  }
+  const result = await db.execute(selectWeekRoutes(week_key));
   res.json(result.rows);
 });
 
@@ -197,22 +202,51 @@ app.put('/api/route-templates/:driverId', async (req, res) => {
 // Vult routes van een week zonder (geldige) chauffeur met de vaste chauffeur uit het standaardrooster.
 // Slaat over: dagen in skip_days (feestdagen), chauffeurs die niet meer in het team zitten en
 // chauffeurs met vakantie, niet beschikbaar of ziek op die dag. Met de hand toegewezen routes blijven staan.
-app.post('/api/routes/apply-template', async (req, res) => {
-  const { week_key, skip_days } = req.body;
-  if (!week_key) return res.status(400).json({ error: 'week_key is verplicht' });
+function applyRouteTemplate(weekKey, skipDays) {
   const templateDriver = `
     SELECT t.driver_id FROM route_templates t
     JOIN drivers d ON d.id = t.driver_id
     WHERE t.day_index = routes.day_index AND t.code = routes.code AND d.is_driver = 1
       AND ${notAwayClause('t.driver_id')}`;
-  const result = await db.execute({
+  return {
     sql: `UPDATE routes SET driver_id = (${templateDriver})
           WHERE week_key = ?
             AND (driver_id IS NULL OR driver_id NOT IN (SELECT id FROM drivers WHERE is_driver = 1))
-            AND EXISTS (${templateDriver})${skipDaysClause(skip_days, 'day_index')}`,
-    args: [week_key],
-  });
+            AND EXISTS (${templateDriver})${skipDaysClause(skipDays, 'day_index')}`,
+    args: [weekKey],
+  };
+}
+
+app.post('/api/routes/apply-template', async (req, res) => {
+  const { week_key, skip_days } = req.body;
+  if (!week_key) return res.status(400).json({ error: 'week_key is verplicht' });
+  const result = await db.execute(applyRouteTemplate(week_key, skip_days));
   res.json({ updated: result.rowsAffected });
+});
+
+// Nieuwe week in één keer: vaste routes aanmaken (alleen als de week nog leeg is), standaardrooster toepassen
+// en de routes teruggeven. Eén transactie, één keer heen en weer naar de database.
+app.post('/api/routes/new-week', async (req, res) => {
+  const { week_key, routes, skip_days } = req.body;
+  if (!week_key || !Array.isArray(routes)) return res.status(400).json({ error: 'week_key en routes zijn verplicht' });
+  for (const r of routes) {
+    if (!(Number.isInteger(r.day_index) && r.day_index >= 0 && r.day_index <= 4) || typeof r.code !== 'string') {
+      return res.status(400).json({ error: 'elke route heeft een day_index (0-4) en code nodig' });
+    }
+  }
+  const statements = [];
+  if (routes.length > 0) {
+    // NOT EXISTS: opent iemand anders tegelijk dezelfde week, dan komen de routes er niet dubbel in
+    statements.push({
+      sql: `INSERT INTO routes (week_key, day_index, code, driver_id)
+            SELECT ?, v.column1, v.column2, NULL FROM (VALUES ${routes.map(() => '(?, ?)').join(', ')}) v
+            WHERE NOT EXISTS (SELECT 1 FROM routes WHERE week_key = ?)`,
+      args: [week_key, ...routes.flatMap(r => [r.day_index, r.code]), week_key],
+    });
+  }
+  statements.push(applyRouteTemplate(week_key, skip_days), selectWeekRoutes(week_key));
+  const results = await db.batch(statements, 'write');
+  res.json(results[results.length - 1].rows);
 });
 
 // Alle routes van een week terug naar "niet toegewezen"; de routes zelf blijven bestaan
@@ -288,6 +322,37 @@ for (const [team, teamColumn] of Object.entries(SHIFT_TEAMS)) {
       args: [week_key, day_index, driver_id, start_time, end_time],
     });
     res.status(201).json({ week_key, day_index, driver_id, start_time, end_time });
+  });
+
+  // Week openen in één keer: is de week nieuw (nog niet gemarkeerd), dan eerst het standaardrooster invullen;
+  // daarna de diensten teruggeven. Eén transactie, één keer heen en weer naar de database.
+  app.post(`/api/${team}-shifts/open-week`, async (req, res) => {
+    const { week_key, fill_new, skip_days } = req.body;
+    if (!week_key) return res.status(400).json({ error: 'week_key is verplicht' });
+    const statements = [];
+    if (fill_new) {
+      statements.push(
+        // Eerst invullen zolang de week nog niet gemarkeerd is...
+        {
+          sql: `INSERT OR IGNORE INTO ${team}_shifts (week_key, day_index, driver_id, start_time, end_time)
+                SELECT ?, t.day_index, t.driver_id, t.start_time, t.end_time
+                FROM ${team}_templates t
+                JOIN drivers d ON d.id = t.driver_id
+                WHERE d.${teamColumn} = 1
+                  AND NOT EXISTS (SELECT 1 FROM ${team}_weeks WHERE week_key = ?)
+                  AND t.driver_id NOT IN (SELECT driver_id FROM ${team}_shifts WHERE week_key = ?)${skipDaysClause(skip_days, 't.day_index')}`,
+          args: [week_key, week_key, week_key],
+        },
+        // ...dan markeren, maar alleen als er standaardroosters zijn (anders later nooit meer ingevuld)
+        {
+          sql: `INSERT OR IGNORE INTO ${team}_weeks (week_key) SELECT ? WHERE EXISTS (SELECT 1 FROM ${team}_templates)`,
+          args: [week_key],
+        }
+      );
+    }
+    statements.push({ sql: `SELECT id, day_index, driver_id, start_time, end_time FROM ${team}_shifts WHERE week_key = ?`, args: [week_key] });
+    const results = await db.batch(statements, 'write');
+    res.json(results[results.length - 1].rows);
   });
 
   // Standaardrooster invullen voor iedereen in het team die die week nog geen diensten heeft.

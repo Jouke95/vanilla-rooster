@@ -24,7 +24,7 @@ test('Productie als apart team', async t => {
   check('Titel "Weekrooster productie"', text().includes('Weekrooster productie'));
   const chips = [...w.document.querySelectorAll('.rr-driver-chip')].map(e => e.firstChild.textContent);
   check('Productie toont alleen Bert en Eva', JSON.stringify(chips) === '["Bert","Eva"]');
-  check('Standaardrooster productie toegepast bij openen', calls.some(c => c.startsWith('POST /api/production-shifts/apply-template') && c.includes('"only_if_new":true')));
+  check('Week openen productie in één verzoek (fill_new)', calls.some(c => c.startsWith('POST /api/production-shifts/open-week') && c.includes('"fill_new":true')));
   check('Eva woensdag 09:00–16:30', text().includes('09:00–16:30'));
   check('Bert dinsdag: label "⚠ magazijn" (werkt ook in het magazijn)', text().includes('⚠ magazijn'));
   check('Bert dinsdag: label "⚠ rijdt: Rotterdam"', text().includes('⚠ rijdt: Rotterdam'));

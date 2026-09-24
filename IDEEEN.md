@@ -31,8 +31,8 @@ Verzameld op 23 september 2026. Nog niet gebouwd tenzij anders vermeld.
 
 ## Onderhoud
 
-- **Vaste React-versie** — nu de ontwikkelversie via unpkg met alleen "versie 18"; vastzetten op een productieversie.
-- **Nieuwe week sneller openen** — vaste routes in één keer door de server laten aanmaken in plaats van ~30 losse verzoeken.
+- **Vaste React-versie** — *Gebouwd (24 sep 2026):* productieversie React 18.3.1.
+- **Nieuwe week sneller openen** — *Gebouwd (24 sep 2026):* één verzoek `/api/routes/new-week` in plaats van ~30.
 
 ## Niet nodig
 

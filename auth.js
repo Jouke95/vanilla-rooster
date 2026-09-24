@@ -25,6 +25,7 @@ const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
 // Nieuw wachtwoord instellen; iedereen wordt uitgelogd
 async function setPassword(password) {
+  sessionCache.clear();
   await db.batch([
     { sql: "INSERT INTO settings (key, value) VALUES ('password_hash', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", args: [hashPassword(password)] },
     'DELETE FROM sessions',
@@ -44,14 +45,30 @@ function sessionCookie(req, token, maxAgeSeconds) {
   return `${COOKIE_NAME}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAgeSeconds}${req.secure ? '; Secure' : ''}`;
 }
 
+// Geldige sessies worden kort onthouden, zodat niet elk verzoek eerst de database hoeft te vragen of je bent
+// ingelogd. Gevolg: na een nieuw wachtwoord (npm run set-password, ander proces) kan een bestaande sessie nog
+// hooguit zo lang door. Uitloggen haalt de sessie direct uit het geheugen. SESSION_CACHE_MS=0 zet het uit.
+const SESSION_CACHE_MS = process.env.SESSION_CACHE_MS !== undefined ? Number(process.env.SESSION_CACHE_MS) : 60000;
+const sessionCache = new Map(); // token_hash -> tijdstip (ms) tot wanneer de sessie zonder controle geldig is
+
 async function isLoggedIn(req) {
   const token = readSessionToken(req);
   if (!token) return false;
+  const tokenHash = sha256(token);
+  if ((sessionCache.get(tokenHash) || 0) > Date.now()) return true;
   const result = await db.execute({
     sql: "SELECT 1 FROM sessions WHERE token_hash = ? AND expires_at > datetime('now')",
-    args: [sha256(token)],
+    args: [tokenHash],
   });
-  return result.rows.length > 0;
+  if (result.rows.length === 0) {
+    sessionCache.delete(tokenHash);
+    return false;
+  }
+  if (SESSION_CACHE_MS > 0) {
+    if (sessionCache.size > 1000) for (const [k, until] of sessionCache) if (until <= Date.now()) sessionCache.delete(k);
+    sessionCache.set(tokenHash, Date.now() + SESSION_CACHE_MS);
+  }
+  return true;
 }
 
 // Mislukte pogingen per IP-adres, alleen in het geheugen (na een herstart begint de telling opnieuw)
@@ -99,7 +116,10 @@ async function login(req, res) {
 
 async function logout(req, res) {
   const token = readSessionToken(req);
-  if (token) await db.execute({ sql: 'DELETE FROM sessions WHERE token_hash = ?', args: [sha256(token)] });
+  if (token) {
+    sessionCache.delete(sha256(token));
+    await db.execute({ sql: 'DELETE FROM sessions WHERE token_hash = ?', args: [sha256(token)] });
+  }
   res.setHeader('Set-Cookie', sessionCookie(req, '', 0));
   res.status(204).send();
 }

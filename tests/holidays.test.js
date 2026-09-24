@@ -54,7 +54,7 @@ test('Feestdagen in de kerstweek van 2026', async t => {
   // Magazijn
   n = calls.length;
   await act(async () => { byText('Magazijn', 'button')[0].click(); }); await tick();
-  check('Standaardrooster slaat vrijdag over (skip_days [4])', calls.slice(n).some(c => c.startsWith('POST /api/warehouse-shifts/apply-template') && c.includes('"skip_days":[4]')));
+  check('Standaardrooster slaat vrijdag over (skip_days [4])', calls.slice(n).some(c => c.startsWith('POST /api/warehouse-shifts/open-week') && c.includes('"skip_days":[4]')));
   const whHeaders = [...w.document.querySelector('.rr-warehouse-grid').children].slice(1, 6).map(e => e.textContent);
   check('Magazijn: kop vrijdag toont "1e Kerstdag"', whHeaders[4].includes('1e Kerstdag'));
   const cells = [...w.document.querySelectorAll('.rr-shift-cell')];

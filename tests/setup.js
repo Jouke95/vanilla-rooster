@@ -81,7 +81,10 @@ function setupApp({ extraRoutes = [] } = {}) {
     if (url === '/api/drivers' && method === 'GET') return json(db.drivers);
     if (url === '/api/vacations' && method === 'GET') return json(db.vacations);
     if (url.startsWith('/api/routes?')) return json(db.routes);
+    if (url === '/api/routes/new-week') return json(body.routes.map((r, i) => ({ id: 1000 + i, ...r, driver_id: null, driver_name: null })));
     if (url.startsWith('/api/warehouse-shifts?')) return json(db.shifts);
+    if (url === '/api/warehouse-shifts/open-week') return json(db.shifts);
+    if (url === '/api/production-shifts/open-week') return json(db.productionShifts);
     if (url === '/api/warehouse-templates') return json(db.templates);
     if (url.startsWith('/api/production-shifts?')) return json(db.productionShifts);
     if (url === '/api/production-templates') return json(db.productionTemplates);

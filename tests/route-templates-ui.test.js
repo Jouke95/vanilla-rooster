@@ -71,17 +71,17 @@ test('Standaardrooster chauffeurs', async t => {
   check('Week leegmaken stuurt clear voor deze week', calls.slice(n4).some(c => c.startsWith('POST /api/routes/clear') && c.includes(`"week_key":"${wk}"`)));
   check('Na leegmaken staan geen routes meer bij een chauffeur', byText('↩', 'span').length === 0);
 
-  // Nieuwe week: eerst vaste routes aanmaken, dan standaardrooster, dan laden
+  // Nieuwe week: vaste routes en standaardrooster in één verzoek
   const n3 = calls.length;
   await act(async () => { byText('volgende week →', 'button')[0].click(); });
   for (let i = 0; i < 20 && w.document.getElementById('root').textContent.includes('Rooster laden…'); i++) await tick();
   const next = calls.slice(n3);
-  const lastSeed = next.map(c => c.startsWith('POST /api/routes ')).lastIndexOf(true);
-  const iNewApply = next.findIndex(c => c.startsWith('POST /api/routes/apply-template'));
-  const iReload = next.map(c => c.startsWith('GET /api/routes?')).lastIndexOf(true);
-  check('Nieuwe week: vaste routes aangemaakt', lastSeed >= 0);
-  check('Nieuwe week: standaardrooster na het aanmaken toegepast', iNewApply > lastSeed);
-  check('Nieuwe week: routes daarna opnieuw geladen', iReload > iNewApply);
+  const newWeek = next.filter(c => c.startsWith('POST /api/routes/new-week'));
+  check('Nieuwe week: één verzoek new-week', newWeek.length === 1);
+  check('Nieuwe week: geen losse POST per route meer', !next.some(c => c.startsWith('POST /api/routes ')));
+  const body = newWeek[0] && JSON.parse(newWeek[0].slice(newWeek[0].indexOf('{')));
+  check('Nieuwe week: alle 28 vaste routes meegestuurd', body && body.routes.length === 28 && body.routes[0].code === 'We Supply');
+  check('Nieuwe week: routes staan daarna in beeld', [...w.document.querySelectorAll('input')].some(i => i.value === 'Zeeland'));
 
   await check.report(t);
 });
