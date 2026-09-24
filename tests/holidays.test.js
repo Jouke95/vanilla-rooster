@@ -6,7 +6,8 @@ test('Feestdagen in de kerstweek van 2026', async t => {
   const check = checker();
   let printed = null;
   w.print = () => { const el = w.document.querySelector('.rr-print-only'); printed = el && el.querySelector('thead').textContent; };
-  const gridKids = () => [...w.document.querySelector('.rr-driver-grid').children];
+  // Kopregel + "Niet toegewezen" (vast bovenaan) en daarna de chauffeurs, als één lijst
+  const gridKids = () => [...w.document.querySelectorAll('.rr-driver-grid')].flatMap(g => [...g.children]);
   function drop(target, payload) {
     return act(async () => {
       const ev = new w.Event('drop', { bubbles: true, cancelable: true });
@@ -36,9 +37,9 @@ test('Feestdagen in de kerstweek van 2026', async t => {
   await drop(unassigned()[3], { routeId: 12, dayIndex: 4 }); await tick();
   check('Route vanaf feestdag naar donderdag: PATCH day_index 3', calls.slice(n).some(c => c.startsWith('PATCH /api/routes/12') && c.includes('"day_index":3') && c.includes('"driver_id":null')));
   check('Zeeland staat nu bij donderdag', unassigned()[3].textContent.includes('Zeeland') || [...unassigned()[3].querySelectorAll('input')].some(i => i.value === 'Zeeland'));
-  // Rotterdam (vr) -> Ad op woensdag. Rijen: Ad op index 13, cellen 14-18
+  // Rotterdam (vr) -> Ad op woensdag. Rijen: Ad op index 12, cellen 13-17
   n = calls.length;
-  await drop(gridKids()[14 + 2], { routeId: 13, dayIndex: 4 }); await tick();
+  await drop(gridKids()[13 + 2], { routeId: 13, dayIndex: 4 }); await tick();
   check('Route vanaf feestdag naar Ad op woensdag: day_index 2 + driver_id 1', calls.slice(n).some(c => c.startsWith('PATCH /api/routes/13') && c.includes('"day_index":2') && c.includes('"driver_id":1')));
   check('Hint verdwijnt als de feestdag leeg is', !unassigned()[4].textContent.includes('Feestdag:'));
   // Gewone route mag niet naar andere dag
@@ -47,7 +48,7 @@ test('Feestdagen in de kerstweek van 2026', async t => {
   check('Route van gewone dag naar andere dag: niets gebeurt', calls.slice(n).length === 0);
   // Zelfde dag toewijzen werkt nog
   n = calls.length;
-  await drop(gridKids()[14 + 3], { routeId: 12, dayIndex: 3 }); await tick();
+  await drop(gridKids()[13 + 3], { routeId: 12, dayIndex: 3 }); await tick();
   check('Toewijzen binnen dezelfde dag werkt nog (alleen driver_id)', calls.slice(n).some(c => c.startsWith('PATCH /api/routes/12') && c.includes('"driver_id":1') && !c.includes('day_index')));
 
   // Magazijn

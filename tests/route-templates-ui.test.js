@@ -15,6 +15,12 @@ test('Standaardrooster chauffeurs', async t => {
 
   await start();
 
+  // Dagnamen en "Niet toegewezen" blijven bovenaan staan bij scrollen; de chauffeurs niet
+  const sticky = w.document.querySelector('.rr-sticky');
+  check('Vast blok bovenaan heeft position sticky', sticky && sticky.style.position === 'sticky');
+  check('Vast blok bevat dagnamen en "Niet toegewezen"', sticky.textContent.includes('Maandag') && sticky.textContent.includes('Niet toegewezen'));
+  check('Chauffeursrijen staan niet in het vaste blok', !sticky.textContent.includes('Ad'));
+
   // Klik op naam opent het standaardrooster van die chauffeur
   const nameCell = () => [...w.document.querySelectorAll('.rr-person-name')].find(e => e.textContent === 'Ad');
   check('Naam Ad in het rooster is klikbaar', !!nameCell());

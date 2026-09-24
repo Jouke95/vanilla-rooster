@@ -4,7 +4,7 @@ Verzameld op 23 september 2026. Nog niet gebouwd tenzij anders vermeld.
 
 ## Feedback Bennie (24 september 2026)
 
-- **Minder scrollen bij slepen** — het gaat om naar beneden scrollen. Idee: rij "Niet toegewezen" bovenaan in beeld houden, rijen compacter.
+- **Minder scrollen bij slepen** — *Gebouwd (24 sep 2026):* dagnamen en "Niet toegewezen" blijven bovenaan staan bij scrollen, rijen compacter.
 - **Status "Ziek"** — aparte status, zie ook Ziekmelding hieronder.
 - **Productie als aparte groep** — werkt grotendeels als het magazijn (diensten met tijden, standaardrooster).
 - **Print in kleur, staand** — magazijn lichtblauw, chauffeur lichtgroen, productie lichtgeel, vakantie oranje, ziek rood; niet werken = wit met "–"; tekst zwart; dagen smaller.
