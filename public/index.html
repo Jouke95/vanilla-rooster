@@ -191,6 +191,15 @@ const ABSENCE = {
   unavailable: { label: "Niet beschikbaar", color: "#B0524E", background: "#FBEEED", border: "#E3B5B2" }
 };
 
+// Kleuren voor de print, zoals Bennie ze gewend is. Niet beschikbaar en niet werken: wit.
+const PRINT_COLORS = {
+  driver: "#CDEBC5",     // lichtgroen
+  warehouse: "#C9E2F8",  // lichtblauw
+  vacation: "#FFB866",   // oranje
+  sick: "#F28B82",       // rood
+  none: "#FFFFFF"
+};
+
 // Soort afwezigheid van iemand op een dag, of null. Ziek gaat voor vakantie, vakantie voor niet beschikbaar.
 function absenceOn(vacations, driverName, isoDate) {
   const types = vacations.filter(v => v.driver_name === driverName && isoDate >= v.start_date && isoDate <= v.end_date).map(v => v.type || "vacation");
@@ -992,36 +1001,39 @@ function CombinedPrint({ weekOffset, driversRaw, vacations, onDone }) {
   const driverIds = new Set(drivers.map(d => d.id));
   const shiftText = shift => shift.start_time ? `${shift.start_time}–${shift.end_time}` : "werkt";
 
+  // Per vakje: achtergrondkleur en tekst. Werkt iemand, dan de kleur van zijn groep; afwezig in de kleur van de
+  // afwezigheid; werkt hij niet, dan wit met een streepje. Alle tekst zwart.
   // section is "driver" (alleen routes) of "warehouse" (alleen magazijntijden); iemand in beide teams staat in beide groepen
-  const cellContent = (person, day, section) => {
+  const cellInfo = (person, day, section) => {
     const away = absenceOn(vacations, person.name, day.isoDate);
-    if (away) return React.createElement("span", { style: { color: ABSENCE[away].color, fontWeight: 600 } }, ABSENCE[away].label);
-    const lines = [];
-    if (section === "driver") {
-      data.routes.filter(r => r.driver_id === person.id && r.day_index === day.dayIndex)
-        .forEach(r => lines.push(React.createElement("div", { key: `r-${r.id}`, style: { fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 } }, r.code || "route")));
-    }
-    const shift = section === "warehouse" && data.shifts.find(s => s.driver_id === person.id && s.day_index === day.dayIndex);
-    if (shift) {
-      lines.push(React.createElement("div", { key: "mag", style: { fontFamily: "'IBM Plex Mono', monospace", color: "#2F6B3A", fontWeight: 600 } }, shiftText(shift)));
-    }
-    return lines;
+    if (away) return { background: PRINT_COLORS[away] || PRINT_COLORS.none, lines: [ABSENCE[away].label] };
+    const lines = section === "driver"
+      ? data.routes.filter(r => r.driver_id === person.id && r.day_index === day.dayIndex).map(r => r.code || "route")
+      : data.shifts.filter(s => s.driver_id === person.id && s.day_index === day.dayIndex).map(shiftText);
+    if (lines.length === 0) return { background: PRINT_COLORS.none, lines: [], empty: true };
+    return { background: PRINT_COLORS[section], lines };
   };
 
-  const cellStyle = { border: "1px solid #D5D9DE", padding: "3px 5px", fontSize: "10.5px", verticalAlign: "top" };
-  const nameStyle = { ...cellStyle, fontWeight: 600, whiteSpace: "nowrap" };
+  const cellStyle = { border: "1px solid #9AA3AD", padding: "2px 4px", fontSize: "10px", verticalAlign: "top", color: "#000000", overflowWrap: "anywhere" };
+  const nameStyle = { ...cellStyle, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
+  const lineStyle = { fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 };
   const personRow = section => person => React.createElement("tr", { key: `${section}-${person.id}` },
     React.createElement("td", { style: nameStyle }, person.name),
-    days.map(day => React.createElement("td", { key: day.id, style: cellStyle }, cellContent(person, day, section)))
+    days.map(day => {
+      const cell = cellInfo(person, day, section);
+      return React.createElement("td", { key: day.id, style: { ...cellStyle, background: cell.background, textAlign: cell.empty ? "center" : "left", verticalAlign: cell.empty ? "middle" : "top" } },
+        cell.empty ? "–" : cell.lines.map((line, i) => React.createElement("div", { key: i, style: lineStyle }, line)));
+    })
   );
   const sectionRow = label => React.createElement("tr", { key: `section-${label}` },
-    React.createElement("td", { colSpan: 6, style: { padding: "8px 5px 3px", fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "12px", borderBottom: "2px solid #1B2A4A" } }, label)
+    React.createElement("td", { colSpan: 6, style: { padding: "8px 4px 3px", fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "12px", color: "#000000", borderBottom: "2px solid #000000" } }, label)
   );
+  const legend = [["Chauffeur", PRINT_COLORS.driver], ["Magazijn", PRINT_COLORS.warehouse], ["Vakantie/vrij", PRINT_COLORS.vacation], ["Ziek", PRINT_COLORS.sick]];
 
   const unassignedByDay = days.map(day => data.routes.filter(r => r.day_index === day.dayIndex && !driverIds.has(r.driver_id)));
   const hasUnassigned = unassignedByDay.some(list => list.length > 0);
 
-  return React.createElement("div", { className: "rr-print-only", style: { fontFamily: "'IBM Plex Sans', system-ui, sans-serif", color: "#1B2A4A", padding: "6px" } },
+  return React.createElement("div", { className: "rr-print-only", style: { fontFamily: "'IBM Plex Sans', system-ui, sans-serif", color: "#000000" } },
     React.createElement("style", null, `
       .rr-print-only { display: none; }
       @media print {
@@ -1030,33 +1042,38 @@ function CombinedPrint({ weekOffset, driversRaw, vacations, onDone }) {
         body, html, #root { background: #fff !important; min-height: auto !important; }
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         .rr-print-only tr { break-inside: avoid; }
+        @page { size: A4 portrait; margin: 10mm; }
       }
     `),
-    React.createElement("h1", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "18px", fontWeight: 700, margin: "0 0 8px" } },
+    React.createElement("h1", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "16px", fontWeight: 700, margin: "0 0 6px" } },
       `Weekrooster week ${getISOWeekNumber(monday)} · ${formatDayDate(monday)} – ${formatDayDate(friday)}`),
     React.createElement("table", { style: { width: "100%", borderCollapse: "collapse", tableLayout: "fixed" } },
       React.createElement("colgroup", null,
-        React.createElement("col", { style: { width: "90px" } }),
+        React.createElement("col", { style: { width: "72px" } }),
         days.map(day => React.createElement("col", { key: day.id }))
       ),
       React.createElement("thead", null,
         React.createElement("tr", null,
           React.createElement("th", { style: { ...cellStyle, border: "none" } }),
-          days.map(day => React.createElement("th", { key: day.id, style: { ...cellStyle, border: "none", textAlign: "left", fontFamily: "'Space Grotesk', sans-serif", fontSize: "11.5px" } }, `${day.name} `, React.createElement("span", { style: { fontWeight: 400, color: "#8A93A0" } }, day.date), day.holiday && React.createElement("div", { style: { color: "#9A5B0B", fontSize: "10px" } }, day.holiday)))
+          days.map(day => React.createElement("th", { key: day.id, style: { ...cellStyle, border: "none", textAlign: "left", fontFamily: "'Space Grotesk', sans-serif", fontSize: "11px" } }, `${day.name} `, React.createElement("span", { style: { fontWeight: 400 } }, day.date), day.holiday && React.createElement("div", { style: { fontSize: "9.5px", fontStyle: "italic" } }, day.holiday)))
         )
       ),
       React.createElement("tbody", null,
         drivers.length > 0 && sectionRow("Chauffeurs"),
         drivers.map(personRow("driver")),
         hasUnassigned && React.createElement("tr", { key: "unassigned" },
-          React.createElement("td", { style: { ...nameStyle, color: "#A9433F" } }, "Niet toegewezen"),
-          days.map((day, i) => React.createElement("td", { key: day.id, style: { ...cellStyle, background: "#FDF6EC" } },
-            unassignedByDay[i].map(r => React.createElement("div", { key: r.id, style: { fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600 } }, r.code || "route"))
+          React.createElement("td", { style: { ...nameStyle, whiteSpace: "normal" } }, "Niet toegewezen"),
+          days.map((day, i) => React.createElement("td", { key: day.id, style: cellStyle },
+            unassignedByDay[i].map(r => React.createElement("div", { key: r.id, style: lineStyle }, r.code || "route"))
           ))
         ),
         warehouse.length > 0 && sectionRow("Magazijn"),
         warehouse.map(personRow("warehouse"))
       )
+    ),
+    React.createElement("div", { className: "rr-print-legend", style: { display: "flex", gap: "14px", marginTop: "8px", fontSize: "10px", color: "#000000" } },
+      legend.map(([label, color]) => React.createElement("span", { key: label, style: { display: "inline-flex", alignItems: "center", gap: "4px" } },
+        React.createElement("span", { style: { display: "inline-block", width: "12px", height: "10px", background: color, border: "1px solid #9AA3AD" } }), label))
     )
   );
 }

@@ -10,6 +10,9 @@ test('Gecombineerde print chauffeurs + magazijn', async t => {
     const tabWrapper = w.document.getElementById('root').firstChild.children[1];
     printed = {
       rows: el ? [...el.querySelectorAll('tr')].map(tr => [...tr.children].map(td => td.textContent)) : null,
+      colors: el ? [...el.querySelectorAll('tr')].map(tr => [...tr.children].map(td => td.style.background)) : null,
+      css: el && el.querySelector('style').textContent,
+      legend: el && el.querySelector('.rr-print-legend').textContent,
       title: el && el.querySelector('h1').textContent,
       tabHidden: tabWrapper.className === 'no-print',
     };
@@ -34,6 +37,15 @@ test('Gecombineerde print chauffeurs + magazijn', async t => {
   check('Cor maandag: "werkt" (dienst zonder tijden)', row('Cor')[1] === 'werkt');
   check('Cor woensdag: Vakantie/vrij', row('Cor')[3] === 'Vakantie/vrij');
   check('Niet toegewezen vrijdag: Zeeland', row('Niet toegewezen')[5] === 'Zeeland');
+  // Kleuren: chauffeur lichtgroen, magazijn lichtblauw, vakantie oranje, niet werken wit met streepje
+  const colorsOf = name => printed.colors[printed.rows.findIndex(r => r[0] === name)];
+  const bertColors = printed.rows.map((r, i) => r[0] === 'Bert' ? printed.colors[i] : null).filter(Boolean);
+  check('Ad maandag (rijdt) lichtgroen', colorsOf('Ad')[1] === 'rgb(205, 235, 197)');
+  check('Bert magazijn dinsdag lichtblauw', bertColors[1][2] === 'rgb(201, 226, 248)');
+  check('Cor woensdag vakantie oranje', colorsOf('Cor')[3] === 'rgb(255, 184, 102)');
+  check('Ad dinsdag (werkt niet) wit met streepje', row('Ad')[2] === '–' && colorsOf('Ad')[2] === 'rgb(255, 255, 255)');
+  check('Print staand A4', printed.css.includes('size: A4 portrait'));
+  check('Legenda met Chauffeur, Magazijn, Vakantie/vrij, Ziek', ['Chauffeur', 'Magazijn', 'Vakantie/vrij', 'Ziek'].every(l => printed.legend.includes(l)));
   check('Tabbladinhoud verborgen tijdens printen', printed.tabHidden);
   check('Printweergave weer weg na printen', !w.document.querySelector('.rr-print-only'));
   check('Gewone tab-inhoud weer zichtbaar', w.document.getElementById('root').firstChild.children[1].className === '');

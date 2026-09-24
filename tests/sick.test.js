@@ -73,9 +73,16 @@ test('Status ziek', async t => {
 
   // Print
   let printed = '';
-  w.print = () => { printed = w.document.querySelector('.rr-print-only').textContent; };
+  let sickColor = '';
+  w.print = () => {
+    const el = w.document.querySelector('.rr-print-only');
+    printed = el.textContent;
+    const td = [...el.querySelectorAll('td')].find(e => e.textContent === 'Ziek');
+    sickColor = td && td.style.background;
+  };
   await act(async () => { byText('Print chauffeurs + magazijn', 'button')[0].click(); }); await tick();
   check('Print toont "Ziek"', printed.includes('Ziek'));
+  check('Ziek is rood in de print', sickColor === 'rgb(242, 139, 130)');
 
   await check.report(t);
 });
