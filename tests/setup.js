@@ -79,6 +79,7 @@ function setupApp({ extraRoutes = [] } = {}) {
     }
     const json = data => ({ ok: true, status: 200, json: async () => data });
     if (url === '/api/drivers' && method === 'GET') return json(db.drivers);
+    if (url === '/api/stats?periode=maand') return json({ routeKing: { name: 'Bert', count: 12 }, topRoute: null, totalRoutes: 40, earlyBird: null, hardWorker: null, duo: null, explorer: null, busiestDay: null, allrounder: null, hours: 60, coffee: 30, since: null });
     if (url === '/api/stats') return json({ routeKing: { name: 'Ad', count: 1234 }, topRoute: { code: 'Rotterdam', count: 321 }, totalRoutes: 5000, earlyBird: null, hardWorker: { name: 'Bert', days: 200 },
       duo: { name: 'Ad', code: 'Rotterdam', count: 38 }, explorer: { name: 'Bert', routes: 14 }, busiestDay: { date: '2026-09-15', people: 23 }, allrounder: { name: 'Bert', teams: ['rijden', 'magazijn', 'productie'] },
       hours: 1500, coffee: 750, since: '2026-09-07' });

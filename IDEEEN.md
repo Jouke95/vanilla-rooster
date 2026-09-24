@@ -31,6 +31,9 @@ Verzameld op 23 september 2026. Nog niet gebouwd tenzij anders vermeld.
 
 ## Algemeen
 
+- **Tabblad Afwezigheid** — *Gebouwd (24 sep 2026, om te testen):* maandoverzicht van vakantie, ziek en niet beschikbaar voor alle teams, met "Vandaag afwezig".
+- **Hall of Fame** — *Gebouwd (24 sep 2026):* easter egg (🏆 rechtsonder) met weetjes, persoonlijke kaart, confetti bij mijlpalen en keuze deze maand / all-time.
+
 - **Notitie per dag** — bijv. "extra levering" of "inventarisatie", zichtbaar op beide tabbladen en de print.
 - **Zaterdag** — zesde dag, eventueel alleen tonen als er iets op staat.
 - **Overzicht dubbele inplanning** — lijstje "deze week dubbel ingepland: Bert (di)" onder het rooster.

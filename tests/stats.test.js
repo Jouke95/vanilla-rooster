@@ -82,3 +82,16 @@ test('persoonlijke kaart', async () => {
   assert.deepStrictEqual(bert.teams, ['rijden', 'magazijn']);
   assert.strictEqual((await fetch(`${BASE}/api/stats/person/999`, { headers: { cookie } })).status, 404);
 });
+
+test('periode deze maand: alleen vanaf de 1e van deze maand', async () => {
+  const monthStats = await (await fetch(`${BASE}/api/stats?periode=maand`, { headers: { cookie } })).json();
+  // Alle gegevens in deze test liggen in januari 2026 of ver in de toekomst
+  assert.strictEqual(monthStats.totalRoutes, 0);
+  assert.strictEqual(monthStats.routeKing, null);
+  assert.strictEqual(monthStats.since, null);
+  const card = await (await fetch(`${BASE}/api/stats/person/3?periode=maand`, { headers: { cookie } })).json();
+  assert.strictEqual(card.days, 0);
+  assert.strictEqual(card.name, 'Cor');
+  // Zonder periode: all-time, zoals eerder
+  assert.strictEqual((await stats()).totalRoutes, 4);
+});

@@ -442,6 +442,10 @@ for (const [team, teamColumn] of Object.entries(SHIFT_TEAMS)) {
 
 // Easter egg: weetjes over alles wat tot en met vandaag in het rooster stond. Alleen lezen; niets over ziekte of vakantie.
 const UP_TO_TODAY = `date(week_key, '+' || day_index || ' days') <= date('now', 'localtime')`;
+// ?periode=maand: alleen vanaf de 1e van deze maand; anders alles (all-time)
+const inPeriod = req => req.query.periode === 'maand'
+  ? `${UP_TO_TODAY} AND date(week_key, '+' || day_index || ' days') >= date('now', 'localtime', 'start of month')`
+  : UP_TO_TODAY;
 // Al het werk: routes met chauffeur en diensten, met het team erbij
 const ALL_WORK = `
   SELECT driver_id, week_key, day_index, 'rijden' AS team FROM routes WHERE driver_id IS NOT NULL
@@ -468,24 +472,25 @@ function mostOften(names) {
 }
 
 app.get('/api/stats', async (req, res) => {
+  const PERIOD = inPeriod(req);
   const [routeKing, topRoute, totalRoutes, shifts, since, hardWorker, duo, explorer, busiestDay, allrounder] = await db.batch([
     `SELECT d.name, COUNT(*) AS n FROM routes r JOIN drivers d ON d.id = r.driver_id
-     WHERE ${UP_TO_TODAY} GROUP BY r.driver_id ORDER BY n DESC, d.name LIMIT 1`,
-    `SELECT code, COUNT(*) AS n FROM routes WHERE driver_id IS NOT NULL AND code != '' AND ${UP_TO_TODAY}
+     WHERE ${PERIOD} GROUP BY r.driver_id ORDER BY n DESC, d.name LIMIT 1`,
+    `SELECT code, COUNT(*) AS n FROM routes WHERE driver_id IS NOT NULL AND code != '' AND ${PERIOD}
      GROUP BY code ORDER BY n DESC, code LIMIT 1`,
-    `SELECT COUNT(*) AS n FROM routes WHERE driver_id IS NOT NULL AND ${UP_TO_TODAY}`,
-    `SELECT d.name, s.start_time, s.end_time FROM (${ALL_SHIFTS}) s JOIN drivers d ON d.id = s.driver_id WHERE ${UP_TO_TODAY}`,
-    `SELECT MIN(date(week_key, '+' || day_index || ' days')) AS d FROM (${ALL_WORK}) WHERE ${UP_TO_TODAY}`,
+    `SELECT COUNT(*) AS n FROM routes WHERE driver_id IS NOT NULL AND ${PERIOD}`,
+    `SELECT d.name, s.start_time, s.end_time FROM (${ALL_SHIFTS}) s JOIN drivers d ON d.id = s.driver_id WHERE ${PERIOD}`,
+    `SELECT MIN(date(week_key, '+' || day_index || ' days')) AS d FROM (${ALL_WORK}) WHERE ${PERIOD}`,
     `SELECT d.name, COUNT(DISTINCT w.week_key || '-' || w.day_index) AS n FROM (${ALL_WORK}) w JOIN drivers d ON d.id = w.driver_id
-     WHERE ${UP_TO_TODAY} GROUP BY w.driver_id ORDER BY n DESC, d.name LIMIT 1`,
+     WHERE ${PERIOD} GROUP BY w.driver_id ORDER BY n DESC, d.name LIMIT 1`,
     `SELECT d.name, r.code, COUNT(*) AS n FROM routes r JOIN drivers d ON d.id = r.driver_id
-     WHERE r.code != '' AND ${UP_TO_TODAY} GROUP BY r.driver_id, r.code ORDER BY n DESC, d.name, r.code LIMIT 1`,
+     WHERE r.code != '' AND ${PERIOD} GROUP BY r.driver_id, r.code ORDER BY n DESC, d.name, r.code LIMIT 1`,
     `SELECT d.name, COUNT(DISTINCT r.code) AS n FROM routes r JOIN drivers d ON d.id = r.driver_id
-     WHERE r.code != '' AND ${UP_TO_TODAY} GROUP BY r.driver_id ORDER BY n DESC, d.name LIMIT 1`,
+     WHERE r.code != '' AND ${PERIOD} GROUP BY r.driver_id ORDER BY n DESC, d.name LIMIT 1`,
     `SELECT date(week_key, '+' || day_index || ' days') AS day, COUNT(DISTINCT driver_id) AS n FROM (${ALL_WORK})
-     WHERE ${UP_TO_TODAY} GROUP BY day ORDER BY n DESC, day LIMIT 1`,
+     WHERE ${PERIOD} GROUP BY day ORDER BY n DESC, day LIMIT 1`,
     `SELECT d.name, GROUP_CONCAT(DISTINCT w.team) AS teams, COUNT(DISTINCT w.team) AS n FROM (${ALL_WORK}) w JOIN drivers d ON d.id = w.driver_id
-     WHERE ${UP_TO_TODAY} GROUP BY w.driver_id ORDER BY n DESC, d.name LIMIT 1`,
+     WHERE ${PERIOD} GROUP BY w.driver_id ORDER BY n DESC, d.name LIMIT 1`,
   ], 'read');
 
   const minutes = shifts.rows.reduce((sum, s) => sum + workedMinutes(s.start_time, s.end_time), 0);
@@ -511,13 +516,14 @@ app.get('/api/stats', async (req, res) => {
 // Persoonlijke kaart in de Hall of Fame: de weetjes van één persoon
 app.get('/api/stats/person/:id', async (req, res) => {
   const id = Number(req.params.id);
+  const PERIOD = inPeriod(req);
   const [person, routes, favorite, shifts, work] = await db.batch([
     { sql: 'SELECT name FROM drivers WHERE id = ?', args: [id] },
-    { sql: `SELECT COUNT(*) AS n, COUNT(DISTINCT CASE WHEN code != '' THEN code END) AS distinct_routes FROM routes WHERE driver_id = ? AND ${UP_TO_TODAY}`, args: [id] },
-    { sql: `SELECT code, COUNT(*) AS n FROM routes WHERE driver_id = ? AND code != '' AND ${UP_TO_TODAY} GROUP BY code ORDER BY n DESC, code LIMIT 1`, args: [id] },
-    { sql: `SELECT start_time, end_time FROM (${ALL_SHIFTS}) WHERE driver_id = ? AND ${UP_TO_TODAY}`, args: [id] },
+    { sql: `SELECT COUNT(*) AS n, COUNT(DISTINCT CASE WHEN code != '' THEN code END) AS distinct_routes FROM routes WHERE driver_id = ? AND ${PERIOD}`, args: [id] },
+    { sql: `SELECT code, COUNT(*) AS n FROM routes WHERE driver_id = ? AND code != '' AND ${PERIOD} GROUP BY code ORDER BY n DESC, code LIMIT 1`, args: [id] },
+    { sql: `SELECT start_time, end_time FROM (${ALL_SHIFTS}) WHERE driver_id = ? AND ${PERIOD}`, args: [id] },
     { sql: `SELECT COUNT(DISTINCT week_key || '-' || day_index) AS days, GROUP_CONCAT(DISTINCT team) AS teams,
-            MIN(date(week_key, '+' || day_index || ' days')) AS first_day FROM (${ALL_WORK}) WHERE driver_id = ? AND ${UP_TO_TODAY}`, args: [id] },
+            MIN(date(week_key, '+' || day_index || ' days')) AS first_day FROM (${ALL_WORK}) WHERE driver_id = ? AND ${PERIOD}`, args: [id] },
   ], 'read');
   if (!person.rows[0]) return res.status(404).json({ error: 'persoon niet gevonden' });
   const starts = shifts.rows.map(s => s.start_time).filter(Boolean).sort();

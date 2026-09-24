@@ -22,6 +22,17 @@ test('Easter egg: Hall of Fame', async t => {
   check('Drukste dag ooit met datum', hall().textContent.includes('15 september 2026, 23 mensen aan het werk'));
   check('Mijlpaal: 5.000 routes met confetti', hall().textContent.includes('🎉 Mijlpaal: 5.000 routes gereden!') && !!w.document.querySelector('.rr-confetti'));
 
+  // Deze maand / all-time
+  const periodBtn = label => [...w.document.querySelectorAll('.rr-fame-period button')].find(b => b.textContent === label);
+  check('Standaard all-time', periodBtn('All-time').getAttribute('aria-pressed') === 'true');
+  await act(async () => { periodBtn('Deze maand').click(); }); await tick();
+  check('Deze maand vraagt ?periode=maand op', calls.some(c => c.startsWith('GET /api/stats?periode=maand')));
+  check('Deze maand: routekoning van de maand', hall().textContent.includes('Bert, met 12 routes'));
+  check('Deze maand: ondertitel vanaf de 1e', w.document.querySelector('.rr-fame-period-text').textContent.startsWith('Deze maand: 1 – '));
+  check('Deze maand: geen mijlpaal', !hall().textContent.includes('Mijlpaal'));
+  await act(async () => { periodBtn('All-time').click(); }); await tick();
+  check('Terug naar all-time', hall().textContent.includes('Ad, met 1.234 routes'));
+
   // Persoonlijke kaart
   const personBtn = [...w.document.querySelectorAll('.rr-fame-person')].find(b => b.textContent === 'Cor');
   check('Namen om een kaart te bekijken', !!personBtn);

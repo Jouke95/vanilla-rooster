@@ -215,6 +215,16 @@ function MoreMenu({ actions }) {
 
 // Uitleg per tabblad, te openen via "⋯ Meer" > "Uitleg"
 const HELP = {
+  absence: {
+    title: "Uitleg afwezigheid",
+    items: [
+      ["Overzicht", "Per persoon een rij, per werkdag van de maand een vakje. Gekleurd betekent afwezig: vakantie/vrij, ziek of niet beschikbaar (zie de legenda). Ga met de muis over een vakje voor de details."],
+      ["Wie staat erin", "Standaard alleen mensen die deze maand afwezig zijn. Vink \"Iedereen tonen\" aan om iedereen uit alle teams te zien."],
+      ["Toevoegen", "Meerdere dagen: het paneel \"Vakantie / ziek\" rechts. Eén dag: klik met rechts op een vakje en kies \"Niet beschikbaar\" of \"Ziek\"."],
+      ["Weghalen", "In het paneel rechts met ×, of met rechts klikken op een vakje van één dag."],
+      ["Bladeren", "Met ‹ en › naar de vorige of volgende maand; \"Naar deze maand\" brengt je terug."]
+    ]
+  },
   routes: {
     title: "Uitleg chauffeurs",
     items: [
@@ -265,6 +275,23 @@ function HelpModal({ help, onClose }) {
   );
 }
 
+// Stijl van de navigatie (week/maand) en het menu "⋯ Meer", gedeeld door alle tabbladen
+const NAV_CSS = `
+      .rr-week-arrow { width: 34px; align-self: stretch; border: none; background: transparent; font-size: 20px; line-height: 1; color: #1B2A4A; cursor: pointer; }
+      .rr-week-arrow:hover { background: #EEF1F4; }
+      .rr-week-today { display: inline-flex; align-items: center; gap: 7px; height: 100%; box-sizing: border-box; padding: 0 14px; border: 1px solid #C9CDD3; border-radius: 8px; background: #FFFFFF; font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 600; color: #1B2A4A; cursor: pointer; transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease; }
+      .rr-week-today:hover { background: #EEF7F0; border-color: #7DB587; color: #2F6B3A; }
+      .rr-week-today-dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #4C9A5B; box-sizing: border-box; }
+      .rr-week-today:hover .rr-week-today-dot { background: #4C9A5B; }
+      .rr-more-btn:hover, .rr-more-btn[aria-expanded="true"] { background: #F3F5F7; border-color: #9AA3AD; color: #1B2A4A; }
+      .rr-more-item { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: transparent; border-radius: 6px; padding: 8px 10px; font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; color: #1B2A4A; text-align: left; cursor: pointer; }
+      .rr-more-item:hover { background: #F3F5F7; }
+      .rr-more-danger:hover { background: #FBEAE9; color: #A9433F; }
+      .rr-more-icon { width: 16px; text-align: center; color: #5A6472; }
+      .rr-more-danger:hover .rr-more-icon { color: #A9433F; }
+      @media print { .rr-week-arrow, .rr-week-side { display: none !important; } .rr-week-box { border: none !important; } }
+`;
+
 // Weeknavigatie bovenaan elk tabblad: pijltjes met weeknummer en datums ertussen, en rechts "deze week" of
 // een knop terug naar deze week (altijd iets op die plek, zodat er niets verspringt). Helemaal rechts het
 // menu "⋯ Meer" met de acties van het tabblad.
@@ -279,21 +306,7 @@ function WeekNav({ weekOffset, setWeekOffset, monday, actions }) {
   }, symbol);
 
   return React.createElement("div", { className: "rr-week-nav", style: { display: "flex", alignItems: "stretch", gap: "10px", marginTop: "12px" } },
-    React.createElement("style", null, `
-      .rr-week-arrow { width: 34px; align-self: stretch; border: none; background: transparent; font-size: 20px; line-height: 1; color: #1B2A4A; cursor: pointer; }
-      .rr-week-arrow:hover { background: #EEF1F4; }
-      .rr-week-today { display: inline-flex; align-items: center; gap: 7px; height: 100%; box-sizing: border-box; padding: 0 14px; border: 1px solid #C9CDD3; border-radius: 8px; background: #FFFFFF; font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 600; color: #1B2A4A; cursor: pointer; transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease; }
-      .rr-week-today:hover { background: #EEF7F0; border-color: #7DB587; color: #2F6B3A; }
-      .rr-week-today-dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #4C9A5B; box-sizing: border-box; }
-      .rr-week-today:hover .rr-week-today-dot { background: #4C9A5B; }
-      .rr-more-btn:hover, .rr-more-btn[aria-expanded="true"] { background: #F3F5F7; border-color: #9AA3AD; color: #1B2A4A; }
-      .rr-more-item { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: transparent; border-radius: 6px; padding: 8px 10px; font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; color: #1B2A4A; text-align: left; cursor: pointer; }
-      .rr-more-item:hover { background: #F3F5F7; }
-      .rr-more-danger:hover { background: #FBEAE9; color: #A9433F; }
-      .rr-more-icon { width: 16px; text-align: center; color: #5A6472; }
-      .rr-more-danger:hover .rr-more-icon { color: #A9433F; }
-      @media print { .rr-week-arrow, .rr-week-side { display: none !important; } .rr-week-box { border: none !important; } }
-    `),
+    React.createElement("style", null, NAV_CSS),
     React.createElement("div", { className: "rr-week-box", style: { display: "inline-flex", alignItems: "stretch", background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", overflow: "hidden" } },
       arrow("Vorige week", -1, "‹"),
       React.createElement("div", { style: { minWidth: "130px", padding: "5px 14px", textAlign: "center", borderLeft: "1px solid #E3E6E9", borderRight: "1px solid #E3E6E9" } },
@@ -1144,6 +1157,111 @@ function ShiftRooster({ team, weekOffset, setWeekOffset, driversRaw, setDriversR
   );
 }
 
+// Tabblad met alleen afwezigheid (vakantie/vrij, ziek, niet beschikbaar) van iedereen, per maand
+const WEEKDAY_LETTERS = ["Z", "M", "D", "W", "D", "V", "Z"];
+
+function AbsenceRooster({ driversRaw, vacations, setVacations }) {
+  const sidePanel = useSidePanelOffset();
+  const [monthOffset, setMonthOffset] = useState(0);
+  const [showAll, setShowAll] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [contextMenu, setContextMenu] = useState(null);
+
+  const today = new Date();
+  const todayIso = weekKey(today);
+  const first = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
+  const monthLabel = first.toLocaleDateString("nl-NL", { month: "long", year: "numeric" });
+  const workdays = [];
+  for (let d = new Date(first); d.getMonth() === first.getMonth(); d.setDate(d.getDate() + 1)) {
+    if (d.getDay() === 0 || d.getDay() === 6) continue;
+    const iso = weekKey(d);
+    workdays.push({ iso, day: d.getDate(), letter: WEEKDAY_LETTERS[d.getDay()], monday: d.getDay() === 1, holiday: holidayName(iso) });
+  }
+  const monthStart = workdays.length ? workdays[0].iso : "", monthEnd = workdays.length ? workdays[workdays.length - 1].iso : "";
+
+  const driverIdByName = Object.fromEntries(driversRaw.map(d => [d.name, d.id]));
+  const teamsOf = person => TEAMS.filter(t => person[t.column]).map(t => t.name).join(", ");
+  const absentThisMonth = name => vacations.some(v => v.driver_name === name && v.start_date <= monthEnd && v.end_date >= monthStart);
+  const everyone = [...driversRaw].sort((a, b) => a.name.localeCompare(b.name));
+  const people = showAll ? everyone : everyone.filter(p => absentThisMonth(p.name));
+  const absentToday = everyone.map(p => [p.name, absenceOn(vacations, p.name, todayIso)]).filter(([, t]) => t);
+
+  const cell = 26;
+  const gridColumns = `150px repeat(${workdays.length}, ${cell}px)`;
+  const monday = w => w.monday ? { borderLeft: "2px solid #C9CDD3", paddingLeft: "2px" } : {};
+
+  const header = [React.createElement("div", { key: "h-name" })].concat(workdays.map(w => React.createElement("div", {
+    key: `h-${w.iso}`, title: w.holiday || undefined,
+    style: { ...monday(w), textAlign: "center", fontSize: "10.5px", lineHeight: 1.25, color: w.holiday ? "#9A5B0B" : "#5A6472", fontWeight: w.iso === todayIso ? 700 : 400 }
+  }, React.createElement("div", null, w.letter), React.createElement("div", { style: { fontFamily: "'IBM Plex Mono', monospace", color: w.iso === todayIso ? "#1B2A4A" : undefined } }, w.day))));
+
+  const rows = people.flatMap(p => [
+    React.createElement("div", { key: `n-${p.id}`, style: { alignSelf: "center", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" } },
+      React.createElement("span", { style: { fontSize: "12.5px", fontWeight: 600 } }, p.name),
+      React.createElement("span", { style: { fontSize: "10.5px", color: "#8A93A0", marginLeft: "6px" } }, teamsOf(p)))
+  ].concat(workdays.map(w => {
+    const away = absenceOn(vacations, p.name, w.iso);
+    return React.createElement("div", {
+      key: `c-${p.id}-${w.iso}`, className: "rr-absence-cell" + (away ? ` rr-absence-${away}` : ""),
+      title: away ? `${p.name} · ${ABSENCE[away].label} · ${formatDayDate(new Date(w.iso + "T12:00:00"))}` : undefined,
+      onContextMenu: e => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, driverName: p.name, isoDate: w.iso }); },
+      style: { ...monday(w), height: `${cell}px`, boxSizing: "border-box", borderRadius: "4px",
+        background: away ? ABSENCE[away].background : w.holiday ? "#FDF8EE" : "#F5F6F8",
+        border: away ? `1px solid ${ABSENCE[away].border}` : "1px solid transparent",
+        outline: w.iso === todayIso ? "2px solid #1B2A4A" : "none", outlineOffset: "-2px" }
+    });
+  })));
+
+  const legend = ["vacation", "sick", "unavailable"].map(t => React.createElement("span", { key: t, style: { display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "12px", color: "#5A6472" } },
+    React.createElement("span", { style: { width: "14px", height: "12px", borderRadius: "3px", background: ABSENCE[t].background, border: `1px solid ${ABSENCE[t].border}` } }), ABSENCE[t].label));
+
+  const arrow = (label, delta, symbol) => React.createElement("button", { className: "rr-week-arrow", onClick: () => setMonthOffset(m => m + delta), title: label, "aria-label": label }, symbol);
+
+  return React.createElement("div", { className: "rr-print-root", style: { minHeight: "100%", background: "#EDF0F2", fontFamily: "'IBM Plex Sans', system-ui, sans-serif", color: "#1B2A4A", padding: "28px 20px 60px" } },
+    React.createElement("style", null, NAV_CSS),
+    React.createElement("div", { style: { display: "flex", gap: "16px", alignItems: "flex-start", flexWrap: "wrap" } },
+      React.createElement("div", { style: { minWidth: 0 } },
+        React.createElement("div", { ref: sidePanel.headerRef, style: { marginBottom: "20px" } },
+          React.createElement("h1", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "26px", fontWeight: 700, margin: 0, letterSpacing: "-0.01em" } }, "Afwezigheid"),
+          React.createElement("div", { style: { display: "flex", alignItems: "stretch", gap: "10px", marginTop: "12px" } },
+            React.createElement("div", { className: "rr-week-box", style: { display: "inline-flex", alignItems: "stretch", background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", overflow: "hidden" } },
+              arrow("Vorige maand", -1, "‹"),
+              React.createElement("div", { className: "rr-month-label", style: { minWidth: "150px", padding: "0 14px", display: "flex", alignItems: "center", justifyContent: "center", borderLeft: "1px solid #E3E6E9", borderRight: "1px solid #E3E6E9", fontFamily: "'Space Grotesk', sans-serif", fontSize: "14px", fontWeight: 700, textTransform: "capitalize" } }, monthLabel),
+              arrow("Volgende maand", 1, "›")
+            ),
+            React.createElement("div", { style: { minWidth: "140px", display: "flex", alignItems: "center" } },
+              monthOffset === 0
+                ? React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12.5px", fontWeight: 600, color: "#2F6B3A" } },
+                    React.createElement("span", { style: { width: "7px", height: "7px", borderRadius: "50%", background: "#4C9A5B" } }), "deze maand")
+                : React.createElement("button", { className: "rr-week-today", onClick: () => setMonthOffset(0) }, React.createElement("span", { className: "rr-week-today-dot" }), "Naar deze maand")
+            ),
+            React.createElement("div", { style: { marginLeft: "auto", display: "flex" } },
+              React.createElement(MoreMenu, { actions: [{ label: "Uitleg", icon: "?", onClick: () => setShowHelp(true), title: "Wat kun je allemaal op dit tabblad" }] }))
+          )
+        ),
+        React.createElement("div", { style: { background: "#FFFFFF", border: "1px solid #C9CDD3", borderRadius: "8px", padding: "12px", minWidth: "520px" } },
+          React.createElement("div", { className: "rr-absent-today", style: { fontSize: "13px", marginBottom: "10px" } },
+            React.createElement("span", { style: { fontWeight: 700 } }, "Vandaag afwezig: "),
+            absentToday.length ? absentToday.map(([name, t]) => `${name} (${ABSENCE[t].label.toLowerCase()})`).join(", ") : "niemand"),
+          React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap", marginBottom: "10px" } },
+            legend,
+            React.createElement("label", { style: { marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12.5px", color: "#5A6472", cursor: "pointer" } },
+              React.createElement("input", { type: "checkbox", className: "rr-show-all", checked: showAll, onChange: e => setShowAll(e.target.checked) }), "Iedereen tonen")
+          ),
+          React.createElement("div", { className: "rr-absence-grid", style: { display: "grid", gridTemplateColumns: gridColumns, gap: "3px 2px", overflowX: "auto" } }, header, rows),
+          people.length === 0 && React.createElement("div", { style: { textAlign: "center", fontSize: "13px", color: "#5A6472", padding: "16px 0 6px" } },
+            "Niemand afwezig in ", monthLabel, " 🎉")
+        )
+      ),
+      React.createElement("div", { ref: sidePanel.sideRef, className: "no-print", style: { display: "flex", flexDirection: "column", gap: "12px", width: "300px", flexShrink: 0, marginTop: `${sidePanel.offset}px` } },
+        React.createElement(VacationPanel, { teamNames: everyone.map(p => p.name), driverIdByName, vacations, setVacations })
+      )
+    ),
+    React.createElement(UnavailableMenu, { menu: contextMenu, onClose: () => setContextMenu(null), driverIdByName, vacations, setVacations }),
+    showHelp && React.createElement(HelpModal, { help: HELP.absence, onClose: () => setShowHelp(false) })
+  );
+}
+
 // Printversie met alle teams (chauffeurs, magazijn, productie) in één tabel. Alleen zichtbaar bij printen.
 function CombinedPrint({ weekOffset, driversRaw, vacations, onDone }) {
   const [data, setData] = useState(null);
@@ -1303,13 +1421,30 @@ function HallOfFame({ driversRaw, onClose }) {
   const [stats, setStats] = useState(null);
   const [milestone, setMilestone] = useState(null);
   const [card, setCard] = useState(null);  // persoonlijke kaart, of null voor het overzicht
+  const [month, setMonth] = useState(false);  // true: alleen deze maand, false: all-time
+  const query = month ? "?periode=maand" : "";
   useEffect(() => {
-    api("/api/stats").then(data => { setStats(data); setMilestone(newMilestone(data)); }, onClose);
     const onKey = e => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-  const openCard = person => { setCard({ loading: true, name: person.name }); api(`/api/stats/person/${person.id}`).then(setCard, () => setCard(null)); };
+  useEffect(() => {
+    setStats(null);
+    // Mijlpalen horen bij all-time; alleen daar (en dus bij het openen) confetti
+    api(`/api/stats${query}`).then(data => { setStats(data); if (!month) setMilestone(newMilestone(data)); }, onClose);
+    if (card && card.id) openCard(card);
+  }, [month]);
+  const openCard = person => { setCard({ loading: true, id: person.id, name: person.name }); api(`/api/stats/person/${person.id}${query}`).then(data => setCard({ ...data, id: person.id }), () => setCard(null)); };
+  const today = new Date();
+  const periodText = month
+    ? `Deze maand: 1 – ${today.toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" })}`
+    : stats && stats.since ? `Alles van ${longDate(stats.since)} tot en met vandaag` : "Alles wat tot en met vandaag in het rooster stond";
+  const periodSwitch = React.createElement("div", { className: "rr-fame-period", role: "group", "aria-label": "Periode", style: { display: "flex", justifyContent: "center", margin: "8px 0 4px" } },
+    React.createElement("div", { style: { display: "inline-flex", border: "1px solid #C9CDD3", borderRadius: "8px", overflow: "hidden" } },
+      [["Deze maand", true], ["All-time", false]].map(([label, value]) => React.createElement("button", {
+        key: label, "aria-pressed": month === value, onClick: () => setMonth(value),
+        style: { border: "none", padding: "5px 14px", fontSize: "12.5px", fontWeight: 600, cursor: "pointer", background: month === value ? "#1B2A4A" : "#FFFFFF", color: month === value ? "#FFFFFF" : "#1B2A4A" }
+      }, label))));
 
   const facts = stats ? [
     ["👑", "Routekoning", stats.routeKing ? `${stats.routeKing.name}, met ${nl(stats.routeKing.count)} routes` : "nog niemand"],
@@ -1351,15 +1486,17 @@ function HallOfFame({ driversRaw, onClose }) {
       card
         ? React.createElement(React.Fragment, null,
             React.createElement("button", { className: "rr-fame-back", onClick: () => setCard(null), style: { position: "absolute", top: "12px", left: "14px", border: "none", background: "transparent", fontSize: "13px", color: "#5A6472", cursor: "pointer" } }, "← Hall of Fame"),
-            React.createElement("div", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "20px", fontWeight: 700, textAlign: "center", marginBottom: "12px" } }, `🏅 ${card.name}`),
+            React.createElement("div", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "20px", fontWeight: 700, textAlign: "center" } }, `🏅 ${card.name}`),
+            periodSwitch,
+            React.createElement("div", { style: { fontSize: "12px", color: "#5A6472", textAlign: "center", marginBottom: "10px" } }, month ? periodText : "All-time"),
             card.loading && React.createElement("div", { style: { textAlign: "center", fontSize: "13px", color: "#8A93A0", padding: "20px 0" } }, "Even tellen…"),
             cardFacts.map(([icon, title, text]) => React.createElement(FameRow, { key: title, icon, title, text }))
           )
         : React.createElement(React.Fragment, null,
             React.createElement("div", { style: { fontFamily: "'Space Grotesk', sans-serif", fontSize: "20px", fontWeight: 700, textAlign: "center" } }, "🏆 Hall of Fame"),
-            React.createElement("div", { style: { fontSize: "12px", color: "#5A6472", textAlign: "center", margin: "2px 0 12px" } },
-              stats && stats.since ? `Alles van ${longDate(stats.since)} tot en met vandaag` : "Alles wat tot en met vandaag in het rooster stond"),
-            milestone && React.createElement("div", { className: "rr-fame-milestone", style: { textAlign: "center", background: "#FFF6D6", border: "1px solid #F0D98A", borderRadius: "8px", padding: "8px", marginBottom: "10px", fontWeight: 700, fontSize: "14px" } }, `🎉 Mijlpaal: ${milestone}`),
+            periodSwitch,
+            React.createElement("div", { className: "rr-fame-period-text", style: { fontSize: "12px", color: "#5A6472", textAlign: "center", margin: "2px 0 12px" } }, periodText),
+            milestone && !month && React.createElement("div", { className: "rr-fame-milestone", style: { textAlign: "center", background: "#FFF6D6", border: "1px solid #F0D98A", borderRadius: "8px", padding: "8px", marginBottom: "10px", fontWeight: 700, fontSize: "14px" } }, `🎉 Mijlpaal: ${milestone}`),
             !stats && React.createElement("div", { style: { textAlign: "center", fontSize: "13px", color: "#8A93A0", padding: "20px 0" } }, "Even tellen…"),
             facts.map(([icon, title, text]) => React.createElement(FameRow, { key: title, icon, title, text })),
             stats && people.length > 0 && React.createElement("div", { style: { borderTop: "1px solid #EEF1F4", paddingTop: "10px" } },
@@ -1407,11 +1544,13 @@ function App() {
       tabButton("chauffeurs", "Chauffeurs"),
       tabButton("magazijn", "Magazijn"),
       tabButton("productie", "Productie"),
+      tabButton("afwezigheid", "Afwezigheid"),
       React.createElement("button", { onClick: () => setCombinedPrint(true), disabled: combinedPrint, style: { marginLeft: "auto", alignSelf: "center", marginBottom: "6px", border: "1px solid #1B2A4A", background: "#1B2A4A", color: "#FFFFFF", borderRadius: "6px", padding: "6px 14px", fontSize: "13px", cursor: combinedPrint ? "wait" : "pointer" } }, "Print rooster"),
       React.createElement("button", { onClick: logout, style: { alignSelf: "center", marginBottom: "6px", border: "1px solid #C9CDD3", background: "#FFFFFF", color: "#1B2A4A", borderRadius: "6px", padding: "6px 12px", fontSize: "13px", cursor: "pointer" } }, "Uitloggen")
     ),
     React.createElement("div", { className: combinedPrint ? "no-print" : "" },
       tab === "chauffeurs" ? React.createElement(RouteRooster, shared)
+        : tab === "afwezigheid" ? React.createElement(AbsenceRooster, { driversRaw, vacations, setVacations })
         // key per team, zodat React bij wisselen tussen magazijn en productie een nieuw rooster maakt
         : React.createElement(ShiftRooster, { ...shared, key: tab, team: tab === "magazijn" ? "warehouse" : "production" })
     ),
