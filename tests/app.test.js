@@ -25,7 +25,10 @@ test('Teams, magazijnrooster, uren en standaardrooster', async t => {
   check('Standaardrooster bij openen week toegepast (only_if_new)', calls.some(c => c.startsWith('POST /api/warehouse-shifts/apply-template') && c.includes('"only_if_new":true')));
   check('Dienst toont tijden "07:00–15:00"', text().includes('07:00–15:00'));
   check('Dienst zonder tijden toont "Werkt"', byText('Werkt', 'span').length === 1);
-  check('Uren totaal 7,5 (8 uur min pauze; dienst zonder tijden telt 0)', text().includes('7,5uren totaal'));
+  // Uren per persoon in het blok "Uren deze week"
+  const hoursOf = name => { const row = [...w.document.querySelectorAll('div')].find(d => d.children.length === 2 && d.children[0].textContent === name && /^[\d,]+$/.test(d.children[1].textContent)); return row && row.children[1].textContent; };
+  check('Bert 7,5 uur (8 uur min pauze), Cor 0 (dienst zonder tijden telt 0)', hoursOf('Bert') === '7,5' && hoursOf('Cor') === '0');
+  check('Geen tegels "diensten totaal" en "uren totaal" meer', !text().includes('diensten totaal') && !text().includes('uren totaal'));
   const sm = (a, b) => w.shiftMinutes({ start_time: a, end_time: b });
   check('Precies 5,5 uur: geen pauze', sm('08:00', '13:30') === 330);
   check('5,5 uur + 1 min: half uur pauze eraf', sm('08:00', '13:31') === 301);
@@ -38,7 +41,7 @@ test('Teams, magazijnrooster, uren en standaardrooster', async t => {
   check('Lege cel met standaardrooster krijgt 09:00–13:00', calls.some(c => c.startsWith('POST /api/warehouse-shifts ') && c.includes('"driver_id":3') && c.includes('"start_time":"09:00","end_time":"13:00"')));
   await click(cells()[0]); await tick();
   check('Lege cel zonder standaardrooster krijgt 07:00–16:30', calls.some(c => c.startsWith('POST /api/warehouse-shifts ') && c.includes('"day_index":0,"driver_id":2') && c.includes('"start_time":"07:00","end_time":"16:30"')));
-  check('Uren totaal nu 7,5 + 4 + 9 = 20,5', text().includes('20,5uren totaal'));
+  check('Uren nu Bert 7,5 + 9 = 16,5 en Cor 4', hoursOf('Bert') === '16,5' && hoursOf('Cor') === '4');
   const before = calls.length;
   await click(cells()[5 + 2]); await tick();
   check('Vakantiecel doet niets bij klikken', calls.length === before);

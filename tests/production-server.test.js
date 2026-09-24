@@ -86,6 +86,18 @@ test('diensten en standaardrooster van productie staan los van het magazijn', as
   assert.deepStrictEqual((await json('GET', `/api/production-shifts?week_key=${WEEK}`)).map(s => s.day_index), [1]);
 });
 
+test('week leegmaken haalt alleen de productiediensten van die week weg', async () => {
+  const eva = (await json('GET', '/api/drivers')).find(d => d.name === 'Eva');
+  await call('POST', '/api/production-shifts', { week_key: '2026-10-19', day_index: 0, driver_id: eva.id, start_time: '09:00', end_time: '16:30' });
+  const before = await json('GET', `/api/production-shifts?week_key=${WEEK}`);
+  assert.ok(before.length > 0);
+  assert.deepStrictEqual(await json('POST', '/api/production-shifts/clear', { week_key: WEEK }), { deleted: before.length });
+  assert.strictEqual((await json('GET', `/api/production-shifts?week_key=${WEEK}`)).length, 0);
+  assert.strictEqual((await json('GET', '/api/production-shifts?week_key=2026-10-19')).length, 1, 'andere week blijft');
+  assert.strictEqual((await json('GET', `/api/warehouse-shifts?week_key=${WEEK}`)).length, 1, 'magazijn blijft');
+  assert.strictEqual((await json('GET', '/api/production-templates')).length, 2, 'standaardrooster blijft');
+});
+
 test('persoon verwijderen haalt ook productiediensten en -standaardrooster weg', async () => {
   const eva = (await json('GET', '/api/drivers')).find(d => d.name === 'Eva');
   await call('DELETE', `/api/drivers/${eva.id}`);

@@ -8,10 +8,14 @@ test('Productie als apart team', async t => {
   // Bert zit ook in productie en werkt dinsdag zowel in het magazijn als in productie
   Object.assign(db.drivers.find(d => d.name === 'Bert'), { is_production: 1 });
   db.productionShifts.push({ id: 8, day_index: 1, driver_id: 2, start_time: '12:00', end_time: '16:30' });
+  // en donderdag alleen in het magazijn, zonder route
+  db.shifts.push({ id: 9, day_index: 3, driver_id: 2, start_time: '07:00', end_time: '16:30' });
 
   await start();
   check('Tabblad Productie aanwezig', byText('Productie', 'button').length === 1);
   check('Chauffeurs-tab: Bert dinsdag "⚠ magazijn, productie"', text().includes('⚠ magazijn, productie'));
+  const bertCells = (() => { const kids = [...[...w.document.querySelectorAll('.rr-driver-grid')][1].children]; const i = kids.findIndex(e => e.textContent === 'Bert'); return kids.slice(i + 1, i + 6); })();
+  check('Chauffeurs-tab: Bert donderdag (alleen magazijn, geen route) zonder label', bertCells[3].textContent === '');
   const bertChip = [...w.document.querySelectorAll('.rr-driver-chip')].find(e => e.firstChild.textContent === 'Bert');
   check('Chip van Bert toont "+ magazijn, productie"', bertChip.textContent.includes('+ magazijn, productie'));
 
@@ -45,6 +49,16 @@ test('Productie als apart team', async t => {
   await act(async () => { setVal.call(input, 'Fien'); input.dispatchEvent(new w.Event('input', { bubbles: true })); });
   await act(async () => { byText('+ toevoegen', 'button')[0].click(); }); await tick();
   check('Nieuwe persoon krijgt alleen is_production=1', calls.some(c => c.startsWith('POST /api/drivers') && c.includes('"is_driver":0,"is_warehouse":0,"is_production":1')));
+
+  // Knoppen zoals bij de chauffeurs; geen eigen printknop meer
+  check('Geen knop "Print rooster" op productie', byText('Print rooster', 'button').length === 0);
+  let n = calls.length;
+  await act(async () => { byText('Week leegmaken', 'button')[0].click(); }); await tick();
+  check('Week leegmaken stuurt clear voor productie', calls.slice(n).some(c => c.startsWith('POST /api/production-shifts/clear')));
+  check('Na leegmaken geen diensten meer in beeld', !text().includes('09:00–16:30'));
+  n = calls.length;
+  await act(async () => { byText('Standaardrooster toepassen', 'button')[0].click(); }); await tick();
+  check('Standaardrooster toepassen voor productie', calls.slice(n).some(c => c.startsWith('POST /api/production-shifts/apply-template') && c.includes('"only_if_new":false')));
 
   // Wisselen naar magazijn geeft het magazijnrooster, niet dat van productie
   await act(async () => { byText('Magazijn', 'button')[0].click(); }); await tick();

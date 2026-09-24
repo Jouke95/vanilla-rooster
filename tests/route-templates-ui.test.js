@@ -59,7 +59,7 @@ test('Standaardrooster chauffeurs', async t => {
 
   // Invullen voor een bestaande week
   const n2 = calls.length;
-  await act(async () => { byText('Standaardrooster invullen', 'button')[0].click(); }); await tick();
+  await act(async () => { byText('Standaardrooster toepassen', 'button')[0].click(); }); await tick();
   const fill = calls.slice(n2);
   const iApply = fill.findIndex(c => c.startsWith('POST /api/routes/apply-template') && c.includes(`"week_key":"${wk}"`));
   check('Invullen stuurt apply-template voor deze week', iApply >= 0);

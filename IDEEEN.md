@@ -11,7 +11,7 @@ Verzameld op 23 september 2026. Nog niet gebouwd tenzij anders vermeld.
 
 ## Chauffeurs
 
-- **Vaste chauffeur per route** — *Gebouwd (24 sep 2026):* "Deze week als standaardrooster opslaan" en "Standaardrooster invullen"; nieuwe weken worden automatisch ingevuld.
+- **Vaste chauffeur per route** — *Gebouwd (24 sep 2026):* klik op de naam van een chauffeur om per weekdag zijn vaste routes aan te vinken; nieuwe weken worden automatisch ingevuld, knop "Standaardrooster toepassen" voor bestaande weken.
 - **Ziekmelding** — *Gebouwd (24 sep 2026)*, zie Feedback Bennie.
 - **Voertuig per route** — kenteken per route, met een waarschuwing als hetzelfde voertuig op één dag dubbel staat.
 - **Vorige week kopiëren** — toewijzingen van vorige week overnemen als startpunt.

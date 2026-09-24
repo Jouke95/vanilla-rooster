@@ -324,6 +324,15 @@ for (const [team, teamColumn] of Object.entries(SHIFT_TEAMS)) {
     res.status(204).send();
   });
 
+  // Alle diensten van dit team in een week weghalen. De week blijft gemarkeerd, dus het standaardrooster
+  // wordt niet vanzelf opnieuw ingevuld; daarvoor is de knop "Standaardrooster invullen".
+  app.post(`/api/${team}-shifts/clear`, async (req, res) => {
+    const { week_key } = req.body;
+    if (!week_key) return res.status(400).json({ error: 'week_key is verplicht' });
+    const result = await db.execute({ sql: `DELETE FROM ${team}_shifts WHERE week_key = ?`, args: [week_key] });
+    res.json({ deleted: result.rowsAffected });
+  });
+
   // Vervangt de diensten van één persoon in een week door diens standaardrooster
   app.post(`/api/${team}-shifts/apply-template/:driverId`, async (req, res) => {
     const { week_key, skip_days } = req.body;
