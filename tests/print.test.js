@@ -22,7 +22,7 @@ test('Gecombineerde print van alle teams', async t => {
   await start();
   await act(async () => { byText('Magazijn', 'button')[0].click(); }); await tick();
   check('Geen printweergave vóór klikken', !w.document.querySelector('.rr-print-only'));
-  await act(async () => { byText('Print alle teams', 'button')[0].click(); }); await tick(); await tick();
+  await act(async () => { byText('Print rooster', 'button')[0].click(); }); await tick(); await tick();
   check('window.print() aangeroepen', !!printed && !!printed.rows);
   const row = name => printed.rows.find(r => r[0] === name);
   const names = printed.rows.map(r => r[0]);

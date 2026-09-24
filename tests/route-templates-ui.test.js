@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const { setupApp, checker } = require('./setup');
 
 test('Standaardrooster chauffeurs', async t => {
-  const { w, calls, byText, tick, act, start, weekKey: wk } = setupApp();
+  const { w, calls, byText, tick, act, start, weekKey: wk, menuAction } = setupApp();
   const check = checker();
 
   // Weken na deze week zijn nog nieuw: geen routes tot ze zijn aangemaakt
@@ -59,7 +59,7 @@ test('Standaardrooster chauffeurs', async t => {
 
   // Invullen voor een bestaande week
   const n2 = calls.length;
-  await act(async () => { byText('Standaardrooster toepassen', 'button')[0].click(); }); await tick();
+  await menuAction('Standaardrooster toepassen');
   const fill = calls.slice(n2);
   const iApply = fill.findIndex(c => c.startsWith('POST /api/routes/apply-template') && c.includes(`"week_key":"${wk}"`));
   check('Invullen stuurt apply-template voor deze week', iApply >= 0);
@@ -67,7 +67,7 @@ test('Standaardrooster chauffeurs', async t => {
 
   // Week leegmaken
   const n4 = calls.length;
-  await act(async () => { byText('Week leegmaken', 'button')[0].click(); }); await tick();
+  await menuAction('Week leegmaken');
   check('Week leegmaken stuurt clear voor deze week', calls.slice(n4).some(c => c.startsWith('POST /api/routes/clear') && c.includes(`"week_key":"${wk}"`)));
   check('Na leegmaken staan geen routes meer bij een chauffeur', byText('↩', 'span').length === 0);
 

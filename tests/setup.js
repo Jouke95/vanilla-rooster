@@ -125,8 +125,15 @@ function setupApp({ extraRoutes = [] } = {}) {
     input.dispatchEvent(new w.Event('input', { bubbles: true }));
   });
   const start = async () => { await act(async () => { w.eval(appScript); }); await tick(); };
+  // Actie uit het menu "⋯ Meer" kiezen: menu openen en het item met dit label aanklikken
+  const menuAction = async label => {
+    await act(async () => { w.document.querySelector('.rr-more-btn').click(); });
+    const item = [...w.document.querySelectorAll('.rr-more-item')].find(b => b.textContent.endsWith(label));
+    await act(async () => { item.click(); });
+    await tick();
+  };
 
-  return { w, db, calls, state, monday, weekKey: iso(monday), act, text, byText, tick, click, setInputValue, start, unexpectedErrors };
+  return { w, db, calls, state, monday, weekKey: iso(monday), act, text, byText, tick, click, setInputValue, start, menuAction, unexpectedErrors };
 }
 
 // Verzamelt controles tijdens een testscenario en meldt ze daarna als losse subtests,

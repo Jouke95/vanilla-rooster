@@ -7,7 +7,7 @@ Verzameld op 23 september 2026. Nog niet gebouwd tenzij anders vermeld.
 - **Minder scrollen bij slepen** — *Gebouwd (24 sep 2026):* dagnamen en "Niet toegewezen" blijven bovenaan staan bij scrollen, rijen compacter.
 - **Status "Ziek"** — *Gebouwd (24 sep 2026):* via het paneel (meerdere dagen) of rechtsklik (één dag); routes van die dagen gaan terug naar "Niet toegewezen".
 - **Productie als aparte groep** — *Gebouwd (24 sep 2026):* eigen tabblad zoals het magazijn (standaarddienst 09:00–16:30), eigen tabellen `production_*`, lichtgeel in de print.
-- **Print in kleur, staand** — *Gebouwd (24 sep 2026)*: "Print alle teams" op staand A4, chauffeur lichtgroen, magazijn lichtblauw, productie lichtgeel, vakantie oranje, ziek rood, niet beschikbaar lichtgrijs, niet werken wit met "–", tekst zwart en vet. De printknoppen per tabblad zijn weg.
+- **Print in kleur, staand** — *Gebouwd (24 sep 2026)*: "Print rooster" op staand A4, chauffeur lichtgroen, magazijn lichtblauw, productie lichtgeel, vakantie oranje, ziek rood, niet beschikbaar lichtgrijs, niet werken wit met "–", tekst zwart en vet. De printknoppen per tabblad zijn weg.
 
 ## Uitstraling (brainstorm 24 september 2026)
 

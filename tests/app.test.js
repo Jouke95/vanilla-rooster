@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const { setupApp, checker } = require('./setup');
 
 test('Teams, magazijnrooster, uren en standaardrooster', async t => {
-  const { w, calls, text, byText, tick, act, start, monday: mon, weekKey: wk } = setupApp();
+  const { w, calls, text, byText, tick, act, start, monday: mon, weekKey: wk, menuAction } = setupApp();
   const check = checker();
 
 
@@ -85,7 +85,7 @@ test('Teams, magazijnrooster, uren en standaardrooster', async t => {
   check('Eerst template opslaan, dan toepassen op week, dan herladen', iPut >= 0 && iApply > iPut && iReload > iApply);
   check('Venster sluit', !text().includes('Standaardrooster Bert'));
 
-  await act(async () => { byText('Standaardrooster toepassen', 'button')[0].click(); }); await tick();
+  await menuAction('Standaardrooster toepassen');
   check('Knop past standaardrooster toe (only_if_new=false)', calls.some(c => c.startsWith('POST /api/warehouse-shifts/apply-template') && c.includes('"only_if_new":false')));
 
   // Ad koppelen aan magazijn via keuzelijst

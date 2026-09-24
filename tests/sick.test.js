@@ -95,7 +95,7 @@ test('Status ziek', async t => {
     const na = [...el.querySelectorAll('td')].find(e => e.textContent === 'Niet beschikbaar');
     unavailableColor = na && na.style.background;
   };
-  await act(async () => { byText('Print alle teams', 'button')[0].click(); }); await tick();
+  await act(async () => { byText('Print rooster', 'button')[0].click(); }); await tick();
   check('Print toont "Ziek"', printed.includes('Ziek'));
   check('Ziek is rood in de print', sickColor === 'rgb(242, 139, 130)');
   check('Niet beschikbaar is lichtgrijs in de print', unavailableColor === 'rgb(213, 213, 213)');

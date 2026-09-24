@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const { setupApp, checker } = require('./setup');
 
 test('Productie als apart team', async t => {
-  const { w, db, calls, text, byText, tick, act, start, click } = setupApp();
+  const { w, db, calls, text, byText, tick, act, start, click, menuAction } = setupApp();
   const check = checker();
 
   // Bert zit ook in productie en werkt dinsdag zowel in het magazijn als in productie
@@ -51,14 +51,19 @@ test('Productie als apart team', async t => {
   check('Nieuwe persoon krijgt alleen is_production=1', calls.some(c => c.startsWith('POST /api/drivers') && c.includes('"is_driver":0,"is_warehouse":0,"is_production":1')));
 
   // Knoppen zoals bij de chauffeurs; geen eigen printknop meer
-  check('Geen knop "Print rooster" op productie', byText('Print rooster', 'button').length === 0);
+  check('Alleen de ene printknop bovenaan, geen eigen printknop op productie', byText('Print rooster', 'button').length === 1);
   let n = calls.length;
-  await act(async () => { byText('Week leegmaken', 'button')[0].click(); }); await tick();
+  await menuAction('Week leegmaken');
   check('Week leegmaken stuurt clear voor productie', calls.slice(n).some(c => c.startsWith('POST /api/production-shifts/clear')));
   check('Na leegmaken geen diensten meer in beeld', !text().includes('09:00–16:30'));
   n = calls.length;
-  await act(async () => { byText('Standaardrooster toepassen', 'button')[0].click(); }); await tick();
+  await menuAction('Standaardrooster toepassen');
   check('Standaardrooster toepassen voor productie', calls.slice(n).some(c => c.startsWith('POST /api/production-shifts/apply-template') && c.includes('"only_if_new":false')));
+
+  check('Geen uitlegregel meer onder de titel', !text().includes('Klik op een lege dag om iemand in te plannen, op een dienst'));
+  await menuAction('Uitleg');
+  check('Uitleg op productie gaat over magazijn en productie', w.document.querySelector('.rr-help').textContent.includes('Uitleg magazijn en productie'));
+  await act(async () => { w.document.querySelector('.rr-help [aria-label="Sluiten"]').click(); });
 
   // Wisselen naar magazijn geeft het magazijnrooster, niet dat van productie
   await act(async () => { byText('Magazijn', 'button')[0].click(); }); await tick();
