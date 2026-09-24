@@ -5,14 +5,14 @@ Verzameld op 23 september 2026. Nog niet gebouwd tenzij anders vermeld.
 ## Feedback Bennie (24 september 2026)
 
 - **Minder scrollen bij slepen** — *Gebouwd (24 sep 2026):* dagnamen en "Niet toegewezen" blijven bovenaan staan bij scrollen, rijen compacter.
-- **Status "Ziek"** — aparte status, zie ook Ziekmelding hieronder.
+- **Status "Ziek"** — *Gebouwd (24 sep 2026):* via het paneel (meerdere dagen) of rechtsklik (één dag); routes van die dagen gaan terug naar "Niet toegewezen".
 - **Productie als aparte groep** — werkt grotendeels als het magazijn (diensten met tijden, standaardrooster).
 - **Print in kleur, staand** — magazijn lichtblauw, chauffeur lichtgroen, productie lichtgeel, vakantie oranje, ziek rood; niet werken = wit met "–"; tekst zwart; dagen smaller.
 
 ## Chauffeurs
 
 - **Vaste chauffeur per route** — *Gebouwd (24 sep 2026):* "Deze week als standaardrooster opslaan" en "Standaardrooster invullen"; nieuwe weken worden automatisch ingevuld.
-- **Ziekmelding** — aparte status "Ziek" (naast vakantie en niet beschikbaar), ook voor meerdere dagen. Routes gaan automatisch terug naar "Niet toegewezen". Werkt ook voor het magazijn.
+- **Ziekmelding** — *Gebouwd (24 sep 2026)*, zie Feedback Bennie.
 - **Voertuig per route** — kenteken per route, met een waarschuwing als hetzelfde voertuig op één dag dubbel staat.
 - **Vorige week kopiëren** — toewijzingen van vorige week overnemen als startpunt.
 

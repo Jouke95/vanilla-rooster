@@ -84,12 +84,22 @@ app.post('/api/vacations', async (req, res) => {
   if (!driver_id || !start_date || !end_date) {
     return res.status(400).json({ error: 'driver_id, start_date en end_date zijn verplicht' });
   }
-  const finalType = type === 'unavailable' ? 'unavailable' : 'vacation';
+  const finalType = ['unavailable', 'sick'].includes(type) ? type : 'vacation';
   const result = await db.execute({
     sql: 'INSERT INTO vacations (driver_id, start_date, end_date, type) VALUES (?, ?, ?, ?)',
     args: [driver_id, start_date, end_date, finalType],
   });
-  res.status(201).json({ id: Number(result.lastInsertRowid), driver_id, start_date, end_date, type: finalType });
+  // Bij ziekte gaan de routes van die dagen terug naar "niet toegewezen", zodat iemand anders ze kan rijden
+  let unassigned = 0;
+  if (finalType === 'sick') {
+    const cleared = await db.execute({
+      sql: `UPDATE routes SET driver_id = NULL
+            WHERE driver_id = ? AND date(week_key, '+' || day_index || ' days') BETWEEN ? AND ?`,
+      args: [driver_id, start_date, end_date],
+    });
+    unassigned = cleared.rowsAffected;
+  }
+  res.status(201).json({ id: Number(result.lastInsertRowid), driver_id, start_date, end_date, type: finalType, unassigned });
 });
 
 app.delete('/api/vacations/:id', async (req, res) => {

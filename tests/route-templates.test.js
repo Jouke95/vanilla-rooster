@@ -116,6 +116,26 @@ test('week leegmaken zet alle routes van die week terug naar niet toegewezen', a
   assert.strictEqual(await driverOf(7), 1, 'andere week blijft ongemoeid');
 });
 
+test('ziek melden zet de routes van die dagen terug naar niet toegewezen; vakantie niet', async () => {
+  await db.execute("UPDATE routes SET driver_id = 1 WHERE id IN (1, 2, 7)");
+  await db.execute("UPDATE routes SET driver_id = 2 WHERE id = 3");
+  const sick = await call('POST', '/api/vacations', { driver_id: 1, start_date: '2026-10-06', end_date: '2026-10-12', type: 'sick' });
+  const body = await sick.json();
+  assert.strictEqual(body.type, 'sick');
+  assert.strictEqual(body.unassigned, 2);
+  assert.strictEqual(await driverOf(1), 1, 'maandag 5 okt valt buiten de ziekmelding');
+  assert.strictEqual(await driverOf(2), null, 'dinsdag 6 okt: terug naar niet toegewezen');
+  assert.strictEqual(await driverOf(3), 2, 'route van Bert blijft staan');
+  assert.strictEqual(await driverOf(7), null, 'maandag 12 okt (volgende week) ook terug');
+
+  const vac = await (await call('POST', '/api/vacations', { driver_id: 1, start_date: '2026-10-05', end_date: '2026-10-05', type: 'vacation' })).json();
+  assert.strictEqual(vac.unassigned, 0);
+  assert.strictEqual(await driverOf(1), 1, 'vakantie laat routes staan');
+
+  const other = await (await call('POST', '/api/vacations', { driver_id: 1, start_date: '2026-11-02', end_date: '2026-11-02', type: 'onzin' })).json();
+  assert.strictEqual(other.type, 'vacation', 'onbekende soort wordt vakantie');
+});
+
 test('persoon verwijderen haalt hem ook uit het standaardrooster', async () => {
   await call('DELETE', '/api/drivers/2');
   const rows = await (await call('GET', '/api/route-templates')).json();
